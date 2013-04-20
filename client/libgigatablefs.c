@@ -114,7 +114,7 @@ int gigaOpen(const char *path, int flags)
 
 	GIGAopen(path, &fi);
 
-	if(fi.fh > 0) 
+	if(fi.fh >= 0) 
 		createGigaFileInfo(fi.fh, flags, path);
 
 	return fi.fh;

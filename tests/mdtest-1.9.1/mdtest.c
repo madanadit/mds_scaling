@@ -638,11 +638,11 @@ void create_remove_items_helper(int dirs,
             fflush( stdout );
           }
 #ifdef _HAS_GIGA
-          if ( fsync(fd) == -1 ) {
+          if ( gigaFsync(fd) == -1 ) {
             FAIL("unable to sync file");
           }
 #else
-          if ( gigaFsync(fd) == -1 ) {
+          if ( fsync(fd) == -1 ) {
             FAIL("unable to sync file");
           }
 #endif

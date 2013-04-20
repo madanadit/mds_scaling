@@ -18,6 +18,7 @@
 #*       make clean      -- remove executable
 #*
 #\*****************************************************************************/
+include ../../backends/build_config.mk
 
 CC.AIX = mpcc_r -bmaxdata:0x80000000
 #CC.Linux = mpicc -Wall
@@ -31,6 +32,9 @@ OS=$(shell uname)
 
 # Flags for compiling on 64-bit machines
 LARGE_FILE = -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE=1 -D__USE_LARGEFILE64=1
+GIGATABLEFS = -D_HAS_GIGA=1
+
+LIBS =../../backends/$(LEVELDBLIBRARY) ../../common.a
 
 CC = $(CC.$(OS))
 
@@ -56,7 +60,7 @@ CC = $(CC.$(OS))
 all: mdtest
 
 mdtest: mdtest.c
-	$(CC) -D$(OS) $(LARGE_FILE) $(MDTEST_FLAGS) -g -o mdtest mdtest.c -lm
+	$(CC) -D$(OS) $(LARGE_FILE) $(GIGATABLEFS) $(MDTEST_FLAGS) -g -o mdtest mdtest.c -I../../client/ -L../../ -lgigatablefs $(LIBS) -lm -lstdc++
 
 clean:
 	rm -f mdtest mdtest.o

@@ -54,6 +54,11 @@
 #include <time.h>
 #include <sys/time.h>
 
+#ifdef _HAS_GIGA
+#include "libgigatablefs.h"
+#include <sys/statvfs.h>
+#endif
+
 #define FILEMODE S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH
 #define DIRMODE S_IRUSR|S_IWUSR|S_IXUSR|S_IRGRP|S_IWGRP|S_IXGRP|S_IROTH|S_IXOTH
 /*
@@ -351,9 +356,15 @@ void create_remove_items_helper(int dirs,
           }
         }
 #else
+#ifdef _HAS_GIGA
+        if (gigaMkdir(curr_item, DIRMODE) == -1) {
+          FAIL("unable to create directory");
+        }
+#else
         if (mkdir(curr_item, DIRMODE) == -1) {
           FAIL("unable to create directory");
         }
+#endif
 #endif
       /*
        * !create
@@ -383,10 +394,16 @@ void create_remove_items_helper(int dirs,
             FAIL("unable to remove directory");
           }
         }
+#else 
+#ifdef _HAS_GIGA
+       	if ( gigaRmdir(curr_item) != 0) {
+            FAIL("unable to remove directory");
+				} 
 #else
         if (rmdir(curr_item) == -1) {
           FAIL("unable to remove directory");
         }
+#endif
 #endif
       }
     /*
@@ -443,10 +460,15 @@ void create_remove_items_helper(int dirs,
             printf( "V-3: create_remove_items_helper (collective): open...\n" );
             fflush( stdout );
           }
-
+#ifdef _HAS_GIGA
+          if ((fd = gigaOpen(curr_item, O_RDWR)) == -1) {
+            FAIL("unable to open file");
+          }
+#else
           if ((fd = open(curr_item, O_RDWR)) == -1) {
             FAIL("unable to open file");
           }
+#endif
 #endif
         /*
          * !collective_creates
@@ -484,10 +506,16 @@ void create_remove_items_helper(int dirs,
               printf( "V-3: create_remove_items_helper (non-collective, shared): open...\n" );
               fflush( stdout );
             }
-
+#ifdef _HAS_GIGA
             if ((fd = open(curr_item, O_CREAT|O_RDWR, FILEMODE)) == -1) {
               FAIL("unable to create file");
-            }                        
+            }   
+#else
+						//TODO: FILEMODE ignored
+            if ((fd = gigaOpen(curr_item, O_CREAT|O_RDWR)) == -1) {
+              FAIL("unable to create file");
+            }   
+#endif                     
 #endif
           /*
            * !shared_file
@@ -524,10 +552,15 @@ void create_remove_items_helper(int dirs,
               printf( "V-3: create_remove_items_helper (non-collective, non-shared): open...\n" );
               fflush( stdout );
             }
-
+#ifdef _HAS_GIGA
+            if ((fd = gigaCreat(curr_item, FILEMODE)) == -1) {
+              FAIL("unable to create file");
+            }
+#else
             if ((fd = creat(curr_item, FILEMODE)) == -1) {
               FAIL("unable to create file");
             }
+#endif
 #endif
           }
         }
@@ -562,10 +595,15 @@ void create_remove_items_helper(int dirs,
             printf( "V-3: create_remove_items_helper: write...\n" );
             fflush( stdout );
           }
-
+#ifdef _HAS_GIGA
+          if (gigaWrite(fd, write_buffer, write_bytes) != write_bytes) {
+            FAIL("unable to write file");
+          }
+#else
           if (write(fd, write_buffer, write_bytes) != write_bytes) {
             FAIL("unable to write file");
           }
+#endif
 #endif
         }
 
@@ -599,10 +637,15 @@ void create_remove_items_helper(int dirs,
             printf( "V-3: create_remove_items_helper: fsync...\n" );
             fflush( stdout );
           }
-
+#ifdef _HAS_GIGA
           if ( fsync(fd) == -1 ) {
             FAIL("unable to sync file");
           }
+#else
+          if ( gigaFsync(fd) == -1 ) {
+            FAIL("unable to sync file");
+          }
+#endif
         }
 #endif
 
@@ -631,10 +674,15 @@ void create_remove_items_helper(int dirs,
           printf( "V-3: create_remove_items_helper: close...\n" );
           fflush( stdout );
         }
-
+#ifdef _HAS_GIGA
+        if (gigaClose(fd) == -1) {
+          FAIL("unable to close file");
+        }
+#else
         if (close(fd) == -1) {
           FAIL("unable to close file");
         }
+#endif
 #endif
       /*
        * !create
@@ -667,9 +715,14 @@ void create_remove_items_helper(int dirs,
             }
           }
 #else
-          if (unlink(curr_item) == -1) {
+#ifdef _HAS_GIGA
+          if (gigaUnlink(curr_item) == -1) {
             FAIL("unable to unlink file");
           }
+#else
+          if (unlink(curr_item) == -1) {
+            FAIL("unable to unlink file");
+#endif
 #endif
         }
       }
@@ -715,9 +768,15 @@ void collective_helper(int dirs, int create, char* path, unsigned long long item
                   }
                 }
 #else
+#ifdef _HAS_GIGA
+                if (gigaMkdir(curr_item, DIRMODE) != 0) {
+                    FAIL("unable to create directory");
+                }
+#else
                 if (mkdir(curr_item, DIRMODE) == -1) {
                     FAIL("unable to create directory");
                 }
+#endif
 #endif
             } else {
 
@@ -738,9 +797,15 @@ void collective_helper(int dirs, int create, char* path, unsigned long long item
                   }
                 }
 #else
+#ifdef _HAS_GIGA
+                if (gigaRmdir(curr_item) != 0) {
+                    FAIL("unable to create directory");
+                }
+#else
                 if (rmdir(curr_item) == -1) {
                     FAIL("unable to remove directory");
                 }
+#endif
 #endif
             }
 
@@ -768,10 +833,17 @@ void collective_helper(int dirs, int create, char* path, unsigned long long item
                   }
                 }
 #else
+#ifdef _HAS_GIGA
+                if ((fd = gigaCreat(curr_item, FILEMODE)) == -1) {
+                    FAIL("unable to create file");
+                }
+#else
                 if ((fd = creat(curr_item, FILEMODE)) == -1) {
                     FAIL("unable to create file");
                 }
 #endif
+#endif
+
 #ifdef _HAS_PLFS
                 if ( using_plfs_path ) {
                   if ( plfs_close( cpfd, rank, uid, open_flags, 0 ) != 0 ) {
@@ -783,11 +855,16 @@ void collective_helper(int dirs, int create, char* path, unsigned long long item
                   }
                 }
 #else
+#ifdef _HAS_GIGA
+                if (gigaClose(fd) == -1) {
+                    FAIL("unable to close file");
+                }
+#else
                 if (close(fd) == -1) {
                     FAIL("unable to close file");
                 }
 #endif
-
+#endif
             } else {
 
                 //remove files
@@ -808,9 +885,14 @@ void collective_helper(int dirs, int create, char* path, unsigned long long item
                       }
                     }
 #else
-                    if (unlink(curr_item) == -1) {
+#ifdef _HAS_GIGA
+                    if (gigaUnlink(curr_item) == -1) {
                         FAIL("unable to unlink file");
                     }
+#else
+                    if (unlink(curr_item) == -1) {
+                        FAIL("unable to unlink file");
+#endif
 #endif
                 }
             }
@@ -1026,7 +1108,9 @@ void mdtest_stat(int random, int dirs, char *path) {
       }
     }
 #else
-    if (stat(item, &buf) == -1) {
+#ifdef _HAS_GIGA
+		struct statvfs bufv;
+    if (gigaStat(item, &bufv) == -1) {
       if (dirs) {
         if ( verbose >= 3 ) {
           fprintf( stdout, "V-3: Stat'ing directory \"%s\"\n", item );
@@ -1041,6 +1125,23 @@ void mdtest_stat(int random, int dirs, char *path) {
         FAIL("unable to stat file");
       }
     }
+#else
+		if (stat(item, &buf) == -1) {
+      if (dirs) {
+        if ( verbose >= 3 ) {
+          fprintf( stdout, "V-3: Stat'ing directory \"%s\"\n", item );
+          fflush( stdout );
+        }
+        FAIL("unable to stat directory");
+      } else {
+        if ( verbose >= 3 ) {
+          fprintf( stdout, "V-3: Stat'ing file \"%s\"\n", item );
+          fflush( stdout );
+        }
+        FAIL("unable to stat file");
+      }
+    }
+#endif
 #endif
   }
 }
@@ -1161,9 +1262,16 @@ void mdtest_read(int random, int dirs, char *path) {
       }
     }
 #else
+#ifdef _HAS_GIGA
+    //TODO: FILEMODE ignored
+		if ((fd = gigaOpen(item, O_RDWR)) == -1) {
+      FAIL("unable to open file");
+    }
+#else
     if ((fd = open(item, O_RDWR, FILEMODE)) == -1) {
       FAIL("unable to open file");
     }
+#endif
 #endif
 
     /* read file */
@@ -1183,9 +1291,15 @@ void mdtest_read(int random, int dirs, char *path) {
         }
       }
 #else
+#ifdef _HAS_PLFS
+      if (gigaRead(fd, read_buffer, read_bytes) != read_bytes) {
+        FAIL("unable to read file");
+      }
+#else
       if (read(fd, read_buffer, read_bytes) != read_bytes) {
         FAIL("unable to read file");
       }
+#endif
 #endif
     }
   
@@ -1201,9 +1315,15 @@ void mdtest_read(int random, int dirs, char *path) {
       }
     }
 #else
+#ifdef _HAS_GIGA
+    if (gigaClose(fd) == -1) {
+      FAIL("unable to close file");
+    }
+#else
     if (close(fd) == -1) {
       FAIL("unable to close file");
     }
+#endif
 #endif
   }
 }
@@ -2033,16 +2153,21 @@ void show_file_system_size(char *file_system) {
       }
     }
 #else
-
-
   if (( rank == 0 ) && ( verbose >= 1 )) {
     fprintf( stdout, "V-1: Entering show_file_system_size...\n" );
     fflush( stdout );
   }
 
+#ifdef _HAS_GIGA
+    struct statvfs stbuf;
+    if (gigaStat(file_system, &stbuf) != 0) {
+        FAIL("unable to statfs() file system");
+    }
+#else
     if (statfs(file_system, &status_buffer) != 0) {
         FAIL("unable to statfs() file system");
     }
+#endif
 #endif
 
     /* data blocks */
@@ -2055,8 +2180,13 @@ void show_file_system_size(char *file_system) {
       free_file_system_size = status_buffer.f_bfree * status_buffer.f_bsize;
     }
 #else
+#ifdef _HAS_GIGA
+    total_file_system_size = stbuf.f_blocks * stbuf.f_bsize;
+    free_file_system_size = stbuf.f_bfree * stbuf.f_bsize;
+#else
     total_file_system_size = status_buffer.f_blocks * status_buffer.f_bsize;
     free_file_system_size = status_buffer.f_bfree * status_buffer.f_bsize;
+#endif
 #endif
     used_file_system_percentage = (1 - ((double)free_file_system_size
                                   / (double)total_file_system_size)) * 100;
@@ -2077,8 +2207,13 @@ void show_file_system_size(char *file_system) {
       free_inodes = status_buffer.f_ffree;
     }
 #else
+#ifdef _HAS_GIGA
+    total_inodes = stbuf.f_files;
+    free_inodes = stbuf.f_ffree;
+#else
     total_inodes = status_buffer.f_files;
     free_inodes = status_buffer.f_ffree;
+#endif
 #endif
     used_inode_percentage = (1 - ((double)free_inodes/(double)total_inodes))
                             * 100;
@@ -2093,9 +2228,13 @@ void show_file_system_size(char *file_system) {
       }
     }
 #else
+#ifdef _HAS_GIGA
+		strcpy( real_path, file_system );
+#else
     if (realpath(file_system, real_path) == NULL) {
         FAIL("unable to use realpath()");
     }
+#endif
 #endif
     fprintf(stdout, "Path: %s\n", real_path);
     fprintf(stdout, "FS: %.1f %s   Used FS: %2.1f%%   ",
@@ -2190,9 +2329,15 @@ void create_remove_directory_tree(int create,
 			  }
       }
 #else
+#ifdef _HAS_GIGA
+      if (gigaMkdir(dir, DIRMODE) != 0) {
+        FAIL("unable to create directory");
+      }
+#else
 			if (mkdir(dir, DIRMODE) == -1) {
 				FAIL("Unable to create directory");
 			}
+#endif
 #endif
 		}
 
@@ -2214,9 +2359,15 @@ void create_remove_directory_tree(int create,
 			  }
       }
 #else
+#ifdef _HAS_GIGA
+     if (gigaRmdir(dir) != 0) {
+       FAIL("Unable to remove directory");
+     }
+#else
 			if (rmdir(dir) == -1) {
 				FAIL("Unable to remove directory");
 			}
+#endif
 #endif
 		}
 
@@ -2247,9 +2398,15 @@ void create_remove_directory_tree(int create,
 				  }
         }
 #else
+#ifdef _HAS_GIGA
+        if (gigaMkdir(temp_path, DIRMODE) != 0) {
+          FAIL("Unable to create directory");
+        }
+#else
 				if (mkdir(temp_path, DIRMODE) == -1) {
 					FAIL("Unable to create directory");
 				}
+#endif
 #endif
 			}
 
@@ -2273,9 +2430,15 @@ void create_remove_directory_tree(int create,
 				  }
         }
 #else
+#ifdef _HAS_GIGA
+				if (gigaRmdir(temp_path) != 0) {
+					FAIL("Unable to remove directory");
+				}
+#else
 				if (rmdir(temp_path) == -1) {
 					FAIL("Unable to remove directory");
 				}
+#endif
 #endif
 			}
 			
@@ -2314,6 +2477,16 @@ int main(int argc, char **argv) {
 #ifdef _HAS_PLFS
     pid = getpid();
     uid = getuid();
+#endif
+
+#ifdef _HAS_GIGA
+    int ret = gigaInit();
+    if(ret) 
+    {
+      printf("ERROR! Failed to initialiaze libgiga\n");
+      fflush( stdout );
+      return ret;
+    }
 #endif
 
     nodeCount = size / count_tasks_per_node();
@@ -2572,11 +2745,19 @@ int main(int argc, char **argv) {
       }
     }
 #else
+#ifdef _HAS_GIGA
+    if ((rank < path_count) && gigaAccess(testdirpath, F_OK) != 0) {
+        if (gigaMkdir(testdirpath, DIRMODE) != 0) {
+            FAIL("Unable to create test directory path");
+        }
+    }
+#else
     if ((rank < path_count) && access(testdirpath, F_OK) != 0) {
         if (mkdir(testdirpath, DIRMODE) != 0) {
             FAIL("Unable to create test directory path");
         }
     }
+#endif
 #endif
 
     /* display disk usage */
@@ -2686,11 +2867,19 @@ int main(int argc, char **argv) {
               }
             }
 #else
+#ifdef _HAS_GIGA
+            if ((rank < path_count) && gigaAccess(testdir, F_OK) != 0) {
+                if (gigaMkdir(testdir, DIRMODE) != 0) {
+                    FAIL("Unable to create test directory");
+                }
+            }
+#else
             if ((rank < path_count) && access(testdir, F_OK) != 0) {
                 if (mkdir(testdir, DIRMODE) != 0) {
                     FAIL("Unable to create test directory");
                 }
             }
+#endif
 #endif
             MPI_Barrier(MPI_COMM_WORLD);
 
@@ -2913,12 +3102,21 @@ int main(int argc, char **argv) {
                   }
                 }
 #else
+#ifdef _HAS_GIGA
+                if ((rank < path_count) && gigaAccess(testdir, F_OK) == 0) {
+                //if (( rank == 0 ) && access(testdir, F_OK) == 0) {
+                  if (gigaRmdir(testdir) != 0) {
+                    FAIL("unable to remove directory");
+                  }
+                }
+#else
                 if ((rank < path_count) && access(testdir, F_OK) == 0) {
                 //if (( rank == 0 ) && access(testdir, F_OK) == 0) {
                   if (rmdir(testdir) == -1) {
                     FAIL("unable to remove directory");
                   }
                 }
+#endif
 #endif
             } else {
                 summary_table[j].entry[9] = 0;
@@ -2939,6 +3137,10 @@ int main(int argc, char **argv) {
     if (random_seed > 0) {
         free(rand_array);
     }
+
+#ifdef _HAS_GIGA
+    gigaDestroy();
+#endif
 
     MPI_Finalize();
     exit(0);

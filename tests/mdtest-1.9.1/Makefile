@@ -60,7 +60,7 @@ CC = $(CC.$(OS))
 all: mdtest
 
 mdtest: mdtest.c
-	$(CC) -D$(OS) $(LARGE_FILE) $(GIGATABLEFS) $(MDTEST_FLAGS) -g -o mdtest mdtest.c -I../../client/ -L../../ -lgigatablefs $(LIBS) -lm -lstdc++
+	$(CC) -D$(OS) $(LARGE_FILE) $(GIGATABLEFS) $(MDTEST_FLAGS) -g -o mdtest mdtest.c -I../../client/ -L../../ -lgiga_client $(LIBS) -lm -lstdc++
 
 clean:
 	rm -f mdtest mdtest.o

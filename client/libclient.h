@@ -1,9 +1,9 @@
 /* C Library for GIGA+TableFS Client
- * Wrapper over FUSE operations 
+ * Wrapper over FUSE operations
  * Author : Adit Madan (aditm)
  */
-#ifndef LIBGIGATABLEFS_GIGA_H
-#define LIBGIGATABLEFS_GIGA_H
+#ifndef LIBCLIENT_GIGA_H
+#define LIBCLIENT_GIGA_H
 
 #include <sys/stat.h>
 #include <stdlib.h>
@@ -12,6 +12,7 @@
 int gigaInit();
 void gigaDestroy();
 
+int gigaMknod(const char *path, mode_t mode, dev_t dev);
 int gigaMkdir(const char *path, mode_t mode);
 int gigaRmdir(const char *path);
 
@@ -25,4 +26,6 @@ int gigaClose(int fd);
 int gigaAccess(const char *path, int mask);
 int gigaUnlink(const char *path);
 int gigaCreat(const char *path, mode_t mode);
-#endif /*LIBGIGATABLEFS_GIGA_H*/
+
+int gigaGetattr(const char *path, struct stat *buf);
+#endif /*LIBCLIENT_GIGA_H*/

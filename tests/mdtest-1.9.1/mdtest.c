@@ -55,7 +55,7 @@
 #include <sys/time.h>
 
 #ifdef _HAS_GIGA
-#include "libgigatablefs.h"
+#include "libclient.h"
 #include <sys/statvfs.h>
 #endif
 
@@ -396,9 +396,9 @@ void create_remove_items_helper(int dirs,
         }
 #else 
 #ifdef _HAS_GIGA
-       	if ( gigaRmdir(curr_item) != 0) {
+         if ( gigaRmdir(curr_item) != 0) {
             FAIL("unable to remove directory");
-				} 
+        } 
 #else
         if (rmdir(curr_item) == -1) {
           FAIL("unable to remove directory");
@@ -441,7 +441,7 @@ void create_remove_items_helper(int dirs,
  * write-only.
  */
             open_flags = O_WRONLY;
-		        wpfd = NULL;
+            wpfd = NULL;
             if ( plfs_open( &wpfd, curr_item, open_flags, rank, FILEMODE, NULL ) != 0 ) {
               FAIL( "Unable to plfs_open file" );
             }
@@ -487,7 +487,7 @@ void create_remove_items_helper(int dirs,
  * write-only.
  */
               open_flags = O_CREAT | O_WRONLY;
-		          wpfd = NULL;
+              wpfd = NULL;
               if ( plfs_open( &wpfd, curr_item, open_flags, rank, FILEMODE, NULL ) != 0 ) {
                 FAIL( "Unable to plfs_open for create file" );
               }
@@ -511,7 +511,7 @@ void create_remove_items_helper(int dirs,
               FAIL("unable to create file");
             }   
 #else
-						//TODO: FILEMODE ignored
+            //TODO: FILEMODE ignored
             if ((fd = gigaOpen(curr_item, O_CREAT|O_RDWR)) == -1) {
               FAIL("unable to create file");
             }   
@@ -533,7 +533,7 @@ void create_remove_items_helper(int dirs,
  * write-only.
  */
               open_flags = O_CREAT | O_WRONLY;
-			        wpfd = NULL;
+              wpfd = NULL;
               if ( plfs_open( &wpfd, curr_item, open_flags, rank, FILEMODE, NULL ) != 0 ) {
                 FAIL( "Unable to plfs_open for create file" );
               }
@@ -823,7 +823,7 @@ void collective_helper(int dirs, int create, char* path, unsigned long long item
 #ifdef _HAS_PLFS
                 if ( using_plfs_path ) {
                   open_flags = O_CREAT | O_WRONLY;
-		  cpfd = NULL;
+      cpfd = NULL;
                   if ( plfs_open( &cpfd, curr_item, open_flags, rank, FILEMODE, NULL ) != 0 ) {
                     FAIL( "Unable to plfs_open for create file" );
                   }
@@ -905,10 +905,10 @@ void collective_helper(int dirs, int create, char* path, unsigned long long item
 void create_remove_items(int currDepth, int dirs, int create, int collective, 
                          char *path, unsigned long long dirNum) {
 
-	int i;
-	char dir[MAX_LEN];
-	char temp_path[MAX_LEN];
-	unsigned long long currDir = dirNum;
+  int i;
+  char dir[MAX_LEN];
+  char temp_path[MAX_LEN];
+  unsigned long long currDir = dirNum;
 
 
   if (( rank == 0 ) && ( verbose >= 1 )) {
@@ -917,75 +917,75 @@ void create_remove_items(int currDepth, int dirs, int create, int collective,
   }
 
 
-	memset(dir, 0, MAX_LEN);
-	strcpy(temp_path, path);
+  memset(dir, 0, MAX_LEN);
+  strcpy(temp_path, path);
 
   if (rank == 0 && verbose >= 3) {
     printf( "V-3: create_remove_items (start): temp_path is \"%s\"\n", temp_path );
     fflush(stdout);
   }
-	
-	if (currDepth == 0) {
-	    /* create items at this depth */
-	    if (!leaf_only || (depth == 0 && leaf_only)) {
+  
+  if (currDepth == 0) {
+      /* create items at this depth */
+      if (!leaf_only || (depth == 0 && leaf_only)) {
             if (collective) {
                 collective_helper(dirs, create, temp_path, 0);
             } else {
-		        create_remove_items_helper(dirs, create, temp_path, 0);
-		    }
-	    }
+            create_remove_items_helper(dirs, create, temp_path, 0);
+        }
+      }
 
-	    if (depth > 0) {
-		    create_remove_items(++currDepth, dirs, create, 
+      if (depth > 0) {
+        create_remove_items(++currDepth, dirs, create, 
                                 collective, temp_path, ++dirNum);
-	    }
+      }
 
-	} else if (currDepth <= depth) {
-		/* iterate through the branches */
-		for (i=0; i<branch_factor; i++) {
+  } else if (currDepth <= depth) {
+    /* iterate through the branches */
+    for (i=0; i<branch_factor; i++) {
 
-		    /* determine the current branch and append it to the path */
-			sprintf(dir, "%s.%llu/", base_tree_name, currDir);
-			strcat(temp_path, "/");
-			strcat(temp_path, dir);
+        /* determine the current branch and append it to the path */
+      sprintf(dir, "%s.%llu/", base_tree_name, currDir);
+      strcat(temp_path, "/");
+      strcat(temp_path, dir);
 
     if (rank == 0 && verbose >= 3) {
       printf( "V-3: create_remove_items (for loop): temp_path is \"%s\"\n", temp_path );
       fflush(stdout);
     }
 
-			/* create the items in this branch */
+      /* create the items in this branch */
     if (!leaf_only || (leaf_only && currDepth == depth)) {
       if (collective) {
         collective_helper(dirs, create, temp_path, currDir*items_per_dir);
       } else {
-			  create_remove_items_helper(dirs, create, temp_path, currDir*items_per_dir);
-			}
-		}
-			
-		/* make the recursive call for the next level below this branch */
-		create_remove_items(
+        create_remove_items_helper(dirs, create, temp_path, currDir*items_per_dir);
+      }
+    }
+      
+    /* make the recursive call for the next level below this branch */
+    create_remove_items(
         ++currDepth,
         dirs,
         create,
         collective,
         temp_path,
         ( currDir * ( unsigned long long )branch_factor ) + 1 );
-		currDepth--;
+    currDepth--;
 
-		/* reset the path */
-		strcpy(temp_path, path);
-		currDir++;
-		}
-	}
+    /* reset the path */
+    strcpy(temp_path, path);
+    currDir++;
+    }
+  }
 }
 
 /* stats all of the items created as specified by the input parameters */
 void mdtest_stat(int random, int dirs, char *path) {
-	
-	struct stat buf;
-	unsigned long long i, parent_dir, item_num = 0;
-	char item[MAX_LEN], temp[MAX_LEN];
+  
+  struct stat buf;
+  unsigned long long i, parent_dir, item_num = 0;
+  char item[MAX_LEN], temp[MAX_LEN];
 
 
   if (( rank == 0 ) && ( verbose >= 1 )) {
@@ -993,7 +993,7 @@ void mdtest_stat(int random, int dirs, char *path) {
     fflush( stdout );
   }
 
-	/* determine the number of items to stat*/
+  /* determine the number of items to stat*/
     unsigned long long stop = 0;
     if (leaf_only) {
         stop = items_per_dir * ( unsigned long long )pow( branch_factor, depth );
@@ -1001,18 +1001,18 @@ void mdtest_stat(int random, int dirs, char *path) {
         stop = items;
     }
 
-	/* iterate over all of the item IDs */
-	for (i = 0; i < stop; i++) {
-   	  
+  /* iterate over all of the item IDs */
+  for (i = 0; i < stop; i++) {
+       
     /*
      * It doesn't make sense to pass the address of the array because that would
      * be like passing char **. Tested it on a Cray and it seems to work either
      * way, but it seems that it is correct without the "&".
      *
-		memset(&item, 0, MAX_LEN);
+    memset(&item, 0, MAX_LEN);
      */
-		memset(item, 0, MAX_LEN);
-		memset(temp, 0, MAX_LEN);
+    memset(item, 0, MAX_LEN);
+    memset(temp, 0, MAX_LEN);
 
         /* determine the item number to stat */
     if (random) {
@@ -1021,13 +1021,13 @@ void mdtest_stat(int random, int dirs, char *path) {
       item_num = i;
     }
 
-		/* make adjustments if in leaf only mode*/
+    /* make adjustments if in leaf only mode*/
     if (leaf_only) {
       item_num += items_per_dir * 
                 (num_dirs_in_tree - ( unsigned long long )pow( branch_factor, depth ));
     }
         
-		/* create name of file/dir to stat */
+    /* create name of file/dir to stat */
     if (dirs) {
       if (rank == 0 && verbose >= 3 && (i%ITEM_COUNT == 0) && (i != 0)) {
         printf("V-3: stat dir: %llu\n", i);
@@ -1109,8 +1109,8 @@ void mdtest_stat(int random, int dirs, char *path) {
     }
 #else
 #ifdef _HAS_GIGA
-		struct statvfs bufv;
-    if (gigaStat(item, &bufv) == -1) {
+    struct stat bufv;
+    if (gigaGetattr(item, &bufv) == -1) {
       if (dirs) {
         if ( verbose >= 3 ) {
           fprintf( stdout, "V-3: Stat'ing directory \"%s\"\n", item );
@@ -1126,7 +1126,7 @@ void mdtest_stat(int random, int dirs, char *path) {
       }
     }
 #else
-		if (stat(item, &buf) == -1) {
+    if (stat(item, &buf) == -1) {
       if (dirs) {
         if ( verbose >= 3 ) {
           fprintf( stdout, "V-3: Stat'ing directory \"%s\"\n", item );
@@ -1149,10 +1149,10 @@ void mdtest_stat(int random, int dirs, char *path) {
 
 /* reads all of the items created as specified by the input parameters */
 void mdtest_read(int random, int dirs, char *path) {
-	
-	unsigned long long i, parent_dir, item_num = 0;
+  
+  unsigned long long i, parent_dir, item_num = 0;
   int fd;
-	char item[MAX_LEN], temp[MAX_LEN];
+  char item[MAX_LEN], temp[MAX_LEN];
 
 
   if (( rank == 0 ) && ( verbose >= 1 )) {
@@ -1176,18 +1176,18 @@ void mdtest_read(int random, int dirs, char *path) {
     stop = items;
   }
   
-	/* iterate over all of the item IDs */
-	for (i = 0; i < stop; i++) {
-   	  
+  /* iterate over all of the item IDs */
+  for (i = 0; i < stop; i++) {
+       
     /*
      * It doesn't make sense to pass the address of the array because that would
      * be like passing char **. Tested it on a Cray and it seems to work either
      * way, but it seems that it is correct without the "&".
      *
-	  memset(&item, 0, MAX_LEN);
+    memset(&item, 0, MAX_LEN);
      */
-	  memset(item, 0, MAX_LEN);
-	  memset(temp, 0, MAX_LEN);
+    memset(item, 0, MAX_LEN);
+    memset(temp, 0, MAX_LEN);
 
     /* determine the item number to read */
     if (random) {
@@ -1196,13 +1196,13 @@ void mdtest_read(int random, int dirs, char *path) {
       item_num = i;
     }
 
-	  /* make adjustments if in leaf only mode*/
+    /* make adjustments if in leaf only mode*/
     if (leaf_only) {
       item_num += items_per_dir * 
         (num_dirs_in_tree - ( unsigned long long )pow( branch_factor, depth ));
     }
         
-	  /* create name of file to read */
+    /* create name of file to read */
     if (dirs) {
       ; /* N/A */
     } else {
@@ -1264,7 +1264,7 @@ void mdtest_read(int random, int dirs, char *path) {
 #else
 #ifdef _HAS_GIGA
     //TODO: FILEMODE ignored
-		if ((fd = gigaOpen(item, O_RDWR)) == -1) {
+    if ((fd = gigaOpen(item, O_RDWR)) == -1) {
       FAIL("unable to open file");
     }
 #else
@@ -1454,8 +1454,8 @@ void directory_test(int iteration, int ntasks, char *path) {
                 collective_create_remove(1, 1, ntasks, temp_path);
             }
         } else {
-			/* create directories */
-        	create_remove_items(0, 1, 1, 0, temp_path, 0);
+      /* create directories */
+          create_remove_items(0, 1, 1, 0, temp_path, 0);
         }
     }
     
@@ -1481,11 +1481,11 @@ void directory_test(int iteration, int ntasks, char *path) {
           fflush( stdout );
         }
         
-		/* stat directories */
-		    if (random_seed > 0) {
-	        mdtest_stat(1, 1, temp_path);
+    /* stat directories */
+        if (random_seed > 0) {
+          mdtest_stat(1, 1, temp_path);
         } else {
-	        mdtest_stat(0, 1, temp_path);
+          mdtest_stat(0, 1, temp_path);
         }
 
     }
@@ -1512,11 +1512,11 @@ void directory_test(int iteration, int ntasks, char *path) {
           fflush( stdout );
         }
         
-		/* read directories */
-	    	if (random_seed > 0) {
-	        ;	/* N/A */
-        } else {	
-	        ;	/* N/A */
+    /* read directories */
+        if (random_seed > 0) {
+          ;  /* N/A */
+        } else {  
+          ;  /* N/A */
         }
 
     }
@@ -1547,7 +1547,7 @@ void directory_test(int iteration, int ntasks, char *path) {
                 collective_create_remove(0, 1, ntasks, temp_path);
             }
         } else {
-        	create_remove_items(0, 1, 0, 0, temp_path, 0);
+          create_remove_items(0, 1, 0, 0, temp_path, 0);
         }
     }
 
@@ -1677,12 +1677,12 @@ void file_test(int iteration, int ntasks, char *path) {
           fflush( stdout );
         }
         
-		/* stat files */
-		    if (random_seed > 0) {
-    	    mdtest_stat(1,0,temp_path);
-		    } else {
-    	    mdtest_stat(0,0,temp_path);
-		    }
+    /* stat files */
+        if (random_seed > 0) {
+          mdtest_stat(1,0,temp_path);
+        } else {
+          mdtest_stat(0,0,temp_path);
+        }
     }
 
     if (barriers) {
@@ -1707,12 +1707,12 @@ void file_test(int iteration, int ntasks, char *path) {
           fflush( stdout );
         }
         
-		/* read files */
-  		  if (random_seed > 0) {
-    	    mdtest_read(1,0,temp_path);
-  		  } else {
-    	    mdtest_read(0,0,temp_path);
-  		  }
+    /* read files */
+        if (random_seed > 0) {
+          mdtest_read(1,0,temp_path);
+        } else {
+          mdtest_read(0,0,temp_path);
+        }
     }
 
     if (barriers) {
@@ -1740,7 +1740,7 @@ void file_test(int iteration, int ntasks, char *path) {
                 collective_create_remove(0, 0, ntasks, temp_path);
             }
         } else {
-        	create_remove_items(0, 0, 0, 0, temp_path, 0);
+          create_remove_items(0, 0, 0, 0, temp_path, 0);
         }
     }
 
@@ -1845,8 +1845,8 @@ void print_help() {
     int i, j;
 
     for (i = 0; strlen(opts[i]) > 0; i++)
-       	printf("%s\n", opts[i]);
-   	fflush(stdout);
+         printf("%s\n", opts[i]);
+     fflush(stdout);
 
     MPI_Initialized(&j);
     if (j) {
@@ -2100,15 +2100,15 @@ void valid_tests() {
     
     /* check depth */
     if (depth < 0) {
-    	FAIL("depth must be greater than or equal to zero");
+      FAIL("depth must be greater than or equal to zero");
     }
     /* check branch_factor */
     if (branch_factor < 1 && depth > 0) {
-    	FAIL("branch factor must be greater than or equal to zero");
+      FAIL("branch factor must be greater than or equal to zero");
     }
     /* check for valid number of items */
     if ((items > 0) && (items_per_dir > 0)) {
-    	FAIL("only specify the number of items or the number of items per directory");
+      FAIL("only specify the number of items or the number of items per directory");
     }
 
 }
@@ -2159,8 +2159,13 @@ void show_file_system_size(char *file_system) {
   }
 
 #ifdef _HAS_GIGA
-    struct statvfs stbuf;
-    if (gigaStat(file_system, &stbuf) != 0) {
+    //TODO: AM : Hack
+    fprintf( stdout, "Giga: Leaving show_file_system_size...stat not supported\n" );
+    fflush( stdout );
+     return;
+ 
+    struct stat stbuf;
+    if (gigaGetattr(file_system, &stbuf) != 0) {
         FAIL("unable to statfs() file system");
     }
 #else
@@ -2180,7 +2185,7 @@ void show_file_system_size(char *file_system) {
       free_file_system_size = status_buffer.f_bfree * status_buffer.f_bsize;
     }
 #else
-#ifdef _HAS_GIGA
+#if 0
     total_file_system_size = stbuf.f_blocks * stbuf.f_bsize;
     free_file_system_size = stbuf.f_bfree * stbuf.f_bsize;
 #else
@@ -2207,7 +2212,7 @@ void show_file_system_size(char *file_system) {
       free_inodes = status_buffer.f_ffree;
     }
 #else
-#ifdef _HAS_GIGA
+#if 0
     total_inodes = stbuf.f_files;
     free_inodes = stbuf.f_ffree;
 #else
@@ -2229,7 +2234,7 @@ void show_file_system_size(char *file_system) {
     }
 #else
 #ifdef _HAS_GIGA
-		strcpy( real_path, file_system );
+    strcpy( real_path, file_system );
 #else
     if (realpath(file_system, real_path) == NULL) {
         FAIL("unable to use realpath()");
@@ -2300,8 +2305,8 @@ void display_freespace(char *testdirpath)
 void create_remove_directory_tree(int create, 
                                   int currDepth, char* path, int dirNum) {
 
-	int i;
-	char dir[MAX_LEN];
+  int i;
+  char dir[MAX_LEN];
 
 
   if (( rank == 0 ) && ( verbose >= 1 )) {
@@ -2309,24 +2314,24 @@ void create_remove_directory_tree(int create,
     fflush( stdout );
   }
 
-	if (currDepth == 0) {
+  if (currDepth == 0) {
 
-	    sprintf(dir, "%s/%s.%d/", path, base_tree_name, dirNum);
+      sprintf(dir, "%s/%s.%d/", path, base_tree_name, dirNum);
 
-		if (create) {
-			if (rank == 0 && verbose >= 2) {
-				printf("V-2: Making directory \"%s\"\n", dir);
-				fflush(stdout);
-			}
+    if (create) {
+      if (rank == 0 && verbose >= 2) {
+        printf("V-2: Making directory \"%s\"\n", dir);
+        fflush(stdout);
+      }
 #ifdef _HAS_PLFS
       if ( using_plfs_path ) {
         if ( plfs_mkdir( dir, DIRMODE ) != 0 ) {
           FAIL("Unable to plfs_mkdir directory");
         }
       } else {
-			  if (mkdir(dir, DIRMODE) == -1) {
-			  	FAIL("Unable to create directory");
-			  }
+        if (mkdir(dir, DIRMODE) == -1) {
+          FAIL("Unable to create directory");
+        }
       }
 #else
 #ifdef _HAS_GIGA
@@ -2334,29 +2339,29 @@ void create_remove_directory_tree(int create,
         FAIL("unable to create directory");
       }
 #else
-			if (mkdir(dir, DIRMODE) == -1) {
-				FAIL("Unable to create directory");
-			}
+      if (mkdir(dir, DIRMODE) == -1) {
+        FAIL("Unable to create directory");
+      }
 #endif
 #endif
-		}
+    }
 
-		create_remove_directory_tree(create, ++currDepth, dir, ++dirNum);
+    create_remove_directory_tree(create, ++currDepth, dir, ++dirNum);
 
-		if (!create) {
-			if (rank == 0 && verbose >= 2) {
-				printf("V-2: Remove directory \"%s\"\n", dir);
-				fflush(stdout);
-			}
+    if (!create) {
+      if (rank == 0 && verbose >= 2) {
+        printf("V-2: Remove directory \"%s\"\n", dir);
+        fflush(stdout);
+      }
 #ifdef _HAS_PLFS
       if ( using_plfs_path ) {
         if ( plfs_rmdir( dir ) != 0 ) {
           FAIL("Unable to plfs_rmdir directory");
         }
       } else {
-			  if (rmdir(dir) == -1) {
-			  	FAIL("Unable to remove directory");
-			  }
+        if (rmdir(dir) == -1) {
+          FAIL("Unable to remove directory");
+        }
       }
 #else
 #ifdef _HAS_GIGA
@@ -2364,38 +2369,38 @@ void create_remove_directory_tree(int create,
        FAIL("Unable to remove directory");
      }
 #else
-			if (rmdir(dir) == -1) {
-				FAIL("Unable to remove directory");
-			}
+      if (rmdir(dir) == -1) {
+        FAIL("Unable to remove directory");
+      }
 #endif
 #endif
-		}
+    }
 
-	} else if (currDepth <= depth) {
-	
-		char temp_path[MAX_LEN];
-		strcpy(temp_path, path);
-		int currDir = dirNum;
+  } else if (currDepth <= depth) {
+  
+    char temp_path[MAX_LEN];
+    strcpy(temp_path, path);
+    int currDir = dirNum;
 
-		for (i=0; i<branch_factor; i++) {
+    for (i=0; i<branch_factor; i++) {
 
-			sprintf(dir, "%s.%d/", base_tree_name, currDir);
-			strcat(temp_path, dir);
+      sprintf(dir, "%s.%d/", base_tree_name, currDir);
+      strcat(temp_path, dir);
 
-			if (create) {
-				if (rank == 0 && verbose >= 2) {
-					printf("V-2: Making directory \"%s\"\n", temp_path);
-					fflush(stdout);
-				}
+      if (create) {
+        if (rank == 0 && verbose >= 2) {
+          printf("V-2: Making directory \"%s\"\n", temp_path);
+          fflush(stdout);
+        }
 #ifdef _HAS_PLFS
         if ( using_plfs_path ) {
           if ( plfs_mkdir( temp_path, DIRMODE ) != 0 ) {
             FAIL("Unable to plfs_mkdir directory");
           }
         } else {
-				  if (mkdir(temp_path, DIRMODE) == -1) {
-				  	FAIL("Unable to create directory");
-				  }
+          if (mkdir(temp_path, DIRMODE) == -1) {
+            FAIL("Unable to create directory");
+          }
         }
 #else
 #ifdef _HAS_GIGA
@@ -2403,49 +2408,49 @@ void create_remove_directory_tree(int create,
           FAIL("Unable to create directory");
         }
 #else
-				if (mkdir(temp_path, DIRMODE) == -1) {
-					FAIL("Unable to create directory");
-				}
+        if (mkdir(temp_path, DIRMODE) == -1) {
+          FAIL("Unable to create directory");
+        }
 #endif
 #endif
-			}
+      }
 
-			create_remove_directory_tree(create, ++currDepth, 
+      create_remove_directory_tree(create, ++currDepth, 
                                          temp_path, (branch_factor*currDir)+1);
-			currDepth--;
-			
-			if (!create) {
-				if (rank == 0 && verbose >= 2) {
-					printf("V-2: Remove directory \"%s\"\n", temp_path);
-					fflush(stdout);
-				}
+      currDepth--;
+      
+      if (!create) {
+        if (rank == 0 && verbose >= 2) {
+          printf("V-2: Remove directory \"%s\"\n", temp_path);
+          fflush(stdout);
+        }
 #ifdef _HAS_PLFS
         if ( using_plfs_path ) {
           if ( plfs_rmdir( temp_path ) != 0 ) {
             FAIL("Unable to plfs_rmdir directory");
           }
         } else {
-				  if (rmdir(temp_path) == -1) {
-				  	FAIL("Unable to remove directory");
-				  }
+          if (rmdir(temp_path) == -1) {
+            FAIL("Unable to remove directory");
+          }
         }
 #else
 #ifdef _HAS_GIGA
-				if (gigaRmdir(temp_path) != 0) {
-					FAIL("Unable to remove directory");
-				}
+        if (gigaRmdir(temp_path) != 0) {
+          FAIL("Unable to remove directory");
+        }
 #else
-				if (rmdir(temp_path) == -1) {
-					FAIL("Unable to remove directory");
-				}
+        if (rmdir(temp_path) == -1) {
+          FAIL("Unable to remove directory");
+        }
 #endif
 #endif
-			}
-			
-			strcpy(temp_path, path);
+      }
+      
+      strcpy(temp_path, path);
       currDir++;
-		}
-	}
+    }
+  }
 }
 
 int main(int argc, char **argv) {
@@ -2515,8 +2520,8 @@ int main(int argc, char **argv) {
         }
 
         switch (c) {
-        	case 'b':
-        		branch_factor = atoi(optarg); break;
+          case 'b':
+            branch_factor = atoi(optarg); break;
             case 'B':
                 barriers = 0;                 break;
             case 'c':
@@ -2542,7 +2547,7 @@ int main(int argc, char **argv) {
                 iterations = atoi(optarg);    break;
             case 'I':
                 items_per_dir = ( unsigned long long )strtoul( optarg, ( char ** )NULL, 10 );   break;
-            	  //items_per_dir = atoi(optarg); break;
+                //items_per_dir = atoi(optarg); break;
             case 'l':
                 last = atoi(optarg);          break;
             case 'L':
@@ -2563,9 +2568,9 @@ int main(int argc, char **argv) {
                     MPI_Bcast(&random_seed, 1, MPI_INT, 0, MPI_COMM_WORLD);
                     random_seed += rank;
                 } else {
-            	    random_seed = atoi(optarg)+rank;
+                  random_seed = atoi(optarg)+rank;
                 }
-                                        	  break;
+                                            break;
             case 's':
                 stride = atoi(optarg);        break;
             case 'S':
@@ -2586,7 +2591,7 @@ int main(int argc, char **argv) {
             case 'y':
                 sync_file = 1;                break;
             case 'z':
-            	depth = atoi(optarg);		  break;
+              depth = atoi(optarg);      break;
         }
     }
 
@@ -2707,7 +2712,7 @@ int main(int argc, char **argv) {
             rand_array[n] = tmp;
         }
     }
-	
+  
     /* allocate and initialize write buffer with # */
     if (write_bytes > 0) {
         write_buffer = (char *)malloc(write_bytes);
@@ -2868,7 +2873,9 @@ int main(int argc, char **argv) {
             }
 #else
 #ifdef _HAS_GIGA
-            if ((rank < path_count) && gigaAccess(testdir, F_OK) != 0) {
+            //if ((rank < path_count) && gigaAccess(testdir, F_OK) != 0) {
+            //TODO:AM: Hack
+            if ((rank < path_count)) {
                 if (gigaMkdir(testdir, DIRMODE) != 0) {
                     FAIL("Unable to create test directory");
                 }
@@ -2883,8 +2890,8 @@ int main(int argc, char **argv) {
 #endif
             MPI_Barrier(MPI_COMM_WORLD);
 
-        	/* create hierarchical directory structure */
-        	MPI_Barrier(MPI_COMM_WORLD);
+          /* create hierarchical directory structure */
+          MPI_Barrier(MPI_COMM_WORLD);
             if (create_only) {
                 startCreate = MPI_Wtime();
                 if (unique_dir_per_task) {
@@ -2946,7 +2953,7 @@ int main(int argc, char **argv) {
                 if (verbose >= 1 && rank == 0) {
                     printf("V-1: main:   Tree creation     : %14.3f sec, %14.3f ops/sec\n",
                         (endCreate - startCreate), summary_table[j].entry[8]);
-					         fflush(stdout);
+                   fflush(stdout);
                 }
             } else {
                summary_table[j].entry[8] = 0;
@@ -3006,7 +3013,7 @@ int main(int argc, char **argv) {
                 }
             }
 
-        	/* remove directory structure */
+          /* remove directory structure */
             if (!unique_dir_per_task) {
               if (verbose >= 3 && rank == 0) {
                 printf( "V-3: main: Using testdir, \"%s\"\n", testdir );
@@ -3077,7 +3084,7 @@ int main(int argc, char **argv) {
                 if (verbose >= 1 && rank == 0) {
                     printf("V-1: main   Tree removal      : %14.3f sec, %14.3f ops/sec\n",
                         (endCreate - startCreate), summary_table[j].entry[9]);
-					          fflush(stdout);
+                    fflush(stdout);
                 }                    
 
                 if (( rank == 0 ) && ( verbose >=2 )) {

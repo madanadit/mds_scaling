@@ -38,6 +38,17 @@ typedef struct {
     char file[PATH_MAX];
 } rpc_leveldb_fh_t;
 
+DIR_handle_t fuse_cache_lookup_with_update(char* path) 
+{
+	DIR_handle_t dir_id = fuse_cache_lookup(path);
+	if(dir_id < 0) {
+		struct stat buf;
+		GIGAgetattr(path, &buf);
+		dir_id = fuse_cache_lookup(path);
+	}
+	return dir_id;
+}
+
 /*
  * Parse the full path name of the file to give the name of the file and the
  * name of the file's parent directory.
@@ -223,7 +234,7 @@ int GIGAmkdir(const char *path, mode_t mode)
         */
         case BACKEND_RPC_LEVELDB:
             parse_path_components(path, file, dir);
-            dir_id = fuse_cache_lookup(dir);
+            dir_id = fuse_cache_lookup_with_update(dir);
             ret = rpc_mkdir(dir_id, file, mode);
             ret = FUSE_ERROR(ret);
             break;
@@ -270,7 +281,7 @@ int GIGAmknod(const char *path, mode_t mode, dev_t dev)
             ;
         case BACKEND_RPC_LEVELDB:
             parse_path_components(path, file, dir);
-            dir_id = fuse_cache_lookup(dir);
+            dir_id = fuse_cache_lookup_with_update(dir);
             ret = rpc_mknod(dir_id, file, mode, dev);
             ret = FUSE_ERROR(ret);
             break;
@@ -302,7 +313,7 @@ int GIGAopendir(const char *path, struct fuse_file_info *fi)
             break;
         case BACKEND_RPC_LEVELDB:
             parse_path_components(path, file, dir);
-            dir_id = fuse_cache_lookup((char*)path);
+            dir_id = fuse_cache_lookup_with_update((char*)path);
             ret = rpc_opendir(dir_id, dir);
             break;
         default:
@@ -342,7 +353,7 @@ int GIGAreaddir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
             break;
         case BACKEND_RPC_LEVELDB:
             parse_path_components(path, file, dir);
-            dir_id = fuse_cache_lookup((char*)path);
+            dir_id = fuse_cache_lookup_with_update((char*)path);
             ret_ls = (scan_list_t)rpc_readdir(dir_id, dir);
             for (ls = ret_ls; ls != NULL; ls = ls->next) {
                 if (filler(buf, ls->entry_name, NULL, 0) != 0) {
@@ -377,7 +388,7 @@ int GIGAreleasedir(const char *path, struct fuse_file_info *fi)
             break;
         case BACKEND_RPC_LEVELDB:
             parse_path_components(path, file, dir);
-            dir_id = fuse_cache_lookup((char*)path);
+            dir_id = fuse_cache_lookup_with_update((char*)path);
             ret = rpc_releasedir(dir_id, dir);
             break;
         default:
@@ -623,7 +634,7 @@ int GIGAopen(const char *path, struct fuse_file_info *fi)
         case BACKEND_RPC_LEVELDB:
             fh = (rpc_leveldb_fh_t *) malloc(sizeof(rpc_leveldb_fh_t));
             parse_path_components(path, fh->file, dir);
-            fh->dir_id = fuse_cache_lookup(dir);
+            fh->dir_id = fuse_cache_lookup_with_update(dir);
             fh->flags = fi->flags;
             ret = rpc_open(fh->dir_id, fh->file, fi->flags,
                            &fh->state, fpath);

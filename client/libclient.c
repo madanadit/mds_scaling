@@ -112,11 +112,12 @@ int gigaMkdir(const char *path, mode_t mode)
   strncpy(dirpath, path, pathlen);
   dirpath[pathlen] = '\0';
 
+  //TODO: Hack till there is no recursive lookup
   int ret = GIGAmkdir(dirpath, mode);
-  if(!ret) {
-    struct stat buf;
-    gigaGetattr(dirpath, &buf);
-  }
+  //if(!ret) {
+   // struct stat buf;
+   // gigaGetattr(dirpath, &buf);
+  //}
   return ret;
 }
 

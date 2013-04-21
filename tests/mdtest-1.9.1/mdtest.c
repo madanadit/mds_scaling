@@ -2751,7 +2751,8 @@ int main(int argc, char **argv) {
     }
 #else
 #ifdef _HAS_GIGA
-    if ((rank < path_count) && gigaAccess(testdirpath, F_OK) != 0) {
+    //if ((rank < path_count) && gigaAccess(testdirpath, F_OK) != 0) {
+    if (rank < path_count) {
         if (gigaMkdir(testdirpath, DIRMODE) != 0) {
             FAIL("Unable to create test directory path");
         }
@@ -3110,8 +3111,8 @@ int main(int argc, char **argv) {
                 }
 #else
 #ifdef _HAS_GIGA
-                if ((rank < path_count) && gigaAccess(testdir, F_OK) == 0) {
-                //if (( rank == 0 ) && access(testdir, F_OK) == 0) {
+            	//TODO:AM: Hack
+                if (rank < path_count) {
                   if (gigaRmdir(testdir) != 0) {
                     FAIL("unable to remove directory");
                   }

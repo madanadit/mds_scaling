@@ -31,8 +31,9 @@ static void init_default_backends(const char *cli_mnt);
 static void init_self_network_IDs();
 static void parse_serverlist_file(const char *serverlist_file);
 static void print_settings();
+#ifdef PANFS
 static void init_parallel_fs_mnt();
-
+#endif
 void initGIGAsetting(int cli_or_srv, char *cli_mnt, const char *srv_list_file)
 {
     giga_proc_type = cli_or_srv;  // client or server flag
@@ -169,6 +170,7 @@ void parse_serverlist_file(const char *serverlist_file)
     fclose(conf_fp);
 }
 
+#ifdef PANFS
 static
 void init_parallel_fs_mnt()
 {
@@ -218,7 +220,7 @@ void init_parallel_fs_mnt()
         exit(1);
     }
 }
-
+#endif
 
 static
 void print_settings()

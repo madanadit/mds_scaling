@@ -25,6 +25,11 @@
 #include "util/logging.h"
 #include "util/posix_logger.h"
 
+#define PLATFORM_HDFS
+#ifdef PLATFORM_HDFS
+#include "hdfs.h"
+#endif
+
 namespace leveldb {
 
 namespace {
@@ -159,6 +164,30 @@ static int LockOrUnlock(int fd, bool lock) {
 //  return fcntl(fd, F_SETLK, &f);
   return 0;
 }
+
+#ifdef PLATFORM_HDFS_UNUSED
+void getNewFileName(const std::string& fname, std::string& new_fname) {
+  printf("getNewFileName(%s) -- \n", fname.c_str());
+  std::string split_dir = "/users/aditm/_splits";
+  if(!fname.compare(0, split_dir.size(), split_dir)) {
+    //printf("getNewFileName(%s) -- ", fname.c_str());
+    new_fname.append(split_dir);
+    new_fname.append("_am_test");
+    if(fname.size() > split_dir.size())
+      new_fname.append(fname.substr(split_dir.size()));
+/*    size_t pos = fname.find_last_of(".");
+    std::string ext = fname.substr(pos+1);
+    if(ext.size() != 0) {
+      new_fname.append(".");
+      new_fname.append(ext);
+*/
+    printf("**VOILA!** ");
+    printf("return [%s]\n", new_fname.c_str());
+  } else {
+    new_fname.append(fname);
+  }
+}
+#endif
 
 class PosixFileLock : public FileLock {
  public:

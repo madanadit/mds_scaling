@@ -24,7 +24,7 @@ CC.AIX = mpcc_r -bmaxdata:0x80000000
 #CC.Linux = mpicc -Wall
 #
 # For Cray systems
-CC.Linux = ${MPI_CC}
+CC.Linux = mpicc
 CC.Darwin = mpicc -Wall
 
 # Requires GNU Make

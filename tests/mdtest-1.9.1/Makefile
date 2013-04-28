@@ -24,7 +24,7 @@ CC.AIX = mpcc_r -bmaxdata:0x80000000
 #CC.Linux = mpicc -Wall
 #
 # For Cray systems
-CC.Linux = ${MPI_CC}
+CC.Linux = mpicc
 CC.Darwin = mpicc -Wall
 
 # Requires GNU Make
@@ -34,7 +34,7 @@ OS=$(shell uname)
 LARGE_FILE = -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE=1 -D__USE_LARGEFILE64=1
 GIGATABLEFS = -D_HAS_GIGA=1
 
-LIBS =../../backends/$(LEVELDBLIBRARY) ../../common.a
+LIBS =../../backends/$(LEVELDBLIBRARY) ../../common.a -lhdfs -ljvm
 
 CC = $(CC.$(OS))
 

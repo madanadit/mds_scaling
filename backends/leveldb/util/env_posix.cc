@@ -25,6 +25,11 @@
 #include "util/logging.h"
 #include "util/posix_logger.h"
 
+#define PLATFORM_HDFS
+#ifdef PLATFORM_HDFS
+#include "hdfs.h"
+#endif
+
 namespace leveldb {
 
 namespace {
@@ -159,6 +164,30 @@ static int LockOrUnlock(int fd, bool lock) {
 //  return fcntl(fd, F_SETLK, &f);
   return 0;
 }
+
+#ifdef PLATFORM_HDFS_UNUSED
+void getNewFileName(const std::string& fname, std::string& new_fname) {
+  printf("getNewFileName(%s) -- \n", fname.c_str());
+  std::string split_dir = "/users/aditm/_splits";
+  if(!fname.compare(0, split_dir.size(), split_dir)) {
+    //printf("getNewFileName(%s) -- ", fname.c_str());
+    new_fname.append(split_dir);
+    new_fname.append("_am_test");
+    if(fname.size() > split_dir.size())
+      new_fname.append(fname.substr(split_dir.size()));
+/*    size_t pos = fname.find_last_of(".");
+    std::string ext = fname.substr(pos+1);
+    if(ext.size() != 0) {
+      new_fname.append(".");
+      new_fname.append(ext);
+*/
+    printf("**VOILA!** ");
+    printf("return [%s]\n", new_fname.c_str());
+  } else {
+    new_fname.append(fname);
+  }
+}
+#endif
 
 class PosixFileLock : public FileLock {
  public:
@@ -420,6 +449,25 @@ PosixEnv::PosixEnv() : page_size_(getpagesize()),
                        started_bgthread_(false) {
   PthreadCall("mutex_init", pthread_mutex_init(&mu_, NULL));
   PthreadCall("cvar_init", pthread_cond_init(&bgsignal_, NULL));
+#ifdef PLATFORM_HDFS
+  fprintf(stdout, "HDFS: Connect for writing!\n");
+  hdfsFS fs = hdfsConnect("10.1.1.29", 8020);
+  const char* writePath = "/testfile.txt";
+  fprintf(stdout, "HDFS: Open %s for writing!\n", writePath);
+	hdfsFile writeFile = hdfsOpenFile(fs, writePath, O_WRONLY|O_CREAT, 0, 0, 0);
+	if(!writeFile) {
+		fprintf(stderr, "Failed to open %s for writing!\n", writePath);
+		exit(-1);
+	}
+  fprintf(stdout, "HDFS: Write buffer\n", writePath);
+	char* buffer = "Hello, World!";
+	tSize num_written_bytes = hdfsWrite(fs, writeFile, (void*)buffer, strlen(buffer)+1);
+	if (hdfsFlush(fs, writeFile)) {
+		fprintf(stderr, "Failed to 'flush' %s\n", writePath); 
+		exit(-1);
+	}
+	hdfsCloseFile(fs, writeFile);
+#endif
 }
 
 void PosixEnv::Schedule(void (*function)(void*), void* arg) {

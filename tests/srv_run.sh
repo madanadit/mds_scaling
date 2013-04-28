@@ -37,16 +37,19 @@ valgrind --tool=memcheck --leak-check=yes ../giga_server
 
 g) # GDB execution
    #
+export CLASSPATH=/usr/lib/jvm/java-6-openjdk/jre/lib/jsse.jar:/usr/lib/jvm/java-6-openjdk/jre/lib/:$(find ../hadoop-0.23.1-lib/ -name "*.jar" | tr '\n' ':')
 gdb --args ../giga_server
 ;;
 
 f) # foreground server execution
    #
+export CLASSPATH=/usr/lib/jvm/java-6-openjdk/jre/lib/jsse.jar:/usr/lib/jvm/java-6-openjdk/jre/lib/:$(find ../hadoop-0.23.1-lib/ -name "*.jar" | tr '\n' ':')
 ../giga_server
 ;;
 
 n) # normal server execution
    #
+export CLASSPATH=/usr/lib/jvm/java-6-openjdk/jre/lib/jsse.jar:/usr/lib/jvm/java-6-openjdk/jre/lib/:$(find $HADOOP_HOME -name "*.jar" | tr '\n' ':')
 ../giga_server &
 ;;
 

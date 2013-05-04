@@ -38,6 +38,120 @@ static Status IOError(const std::string& context, int err_number) {
   return Status::IOError(context, strerror(err_number));
 }
 
+/* Begin: HDFS Env */
+static const char *primaryNamenode = "10.1.1.61";
+
+void hdfsDebugLog( const char* format, ... ) {
+    va_list args;
+    va_start( args, format );
+    vfprintf( stdout, format, args );
+    va_end( args );
+}
+
+//Check if the file should be accessed from HDFS
+static bool onHDFS(const std::string &fname) {
+  bool on_hdfs = false;
+#ifdef PLATFORM_HDFS
+  static const std::string ext_sst = ".sst";
+  if (fname.length() >= ext_sst.length()) {
+    on_hdfs =  !fname.compare(fname.length() - ext_sst.length(), ext_sst.length(), ext_sst);
+  }
+#endif
+  return on_hdfs;
+}
+
+static hdfsFS hdfs_fs_;
+
+class HDFSRandomAccessFile: public RandomAccessFile {
+ private:
+  std::string filename_;
+  hdfsFile file_;
+
+ public:
+  HDFSRandomAccessFile(const std::string& fname, hdfsFile file)
+      : filename_(fname), file_(file) { }
+  virtual ~HDFSRandomAccessFile() { hdfsCloseFile(hdfs_fs_, file_); }
+
+  virtual Status Read(uint64_t offset, size_t n, Slice* result,
+                      char* scratch) const {
+    hdfsDebugLog("Read path %s\n", filename_.c_str());
+
+    Status s;
+    ssize_t r = hdfsPread(hdfs_fs_, file_, static_cast<tOffset>(offset), scratch, static_cast<tSize>(n));
+    *result = Slice(scratch, (r < 0) ? 0 : r);
+    if (r < 0) {
+      hdfsDebugLog("Error in Read path %s\n", filename_.c_str());
+      // An error: return a non-ok status
+      s = IOError(filename_, errno);
+    }
+    return s;
+  }
+};
+
+class HDFSWritableFile : public WritableFile {
+ private:
+  std::string filename_;
+  hdfsFile file_;
+
+ public:
+  HDFSWritableFile(const std::string& fname, hdfsFile file)
+      : filename_(fname),
+        file_(file){
+  }
+
+  ~HDFSWritableFile() {
+    if (file_ != NULL) {
+      HDFSWritableFile::Close();
+    }
+  }
+
+  virtual Status Append(const Slice& data) {
+    //hdfsDebugLog("Append path %s\n", filename_.c_str());
+
+    const char* src = data.data();
+    size_t data_size = data.size();
+    if (hdfsWrite(hdfs_fs_, file_, src, data_size) < 0) {
+      hdfsDebugLog("Error in append path %s\n", filename_.c_str());
+      return IOError(filename_, errno);
+    }
+
+    return Status::OK();
+  }
+
+  virtual Status Close() {
+    hdfsDebugLog("Close path %s\n", filename_.c_str());
+
+    Status s;
+    if (hdfsCloseFile(hdfs_fs_, file_) < 0) {
+      hdfsDebugLog("Error in close path %s\n", filename_.c_str());
+
+      if (s.ok()) {
+        s = IOError(filename_, errno);
+      }
+    }
+    file_ = NULL;
+    return s;
+  }
+
+  virtual Status Flush() {
+    return Status::OK();
+  }
+
+  virtual Status Sync() {
+    hdfsDebugLog("Sync path %s\n", filename_.c_str());
+
+    Status s;
+
+    if(hdfsFlush(hdfs_fs_, file_) < 0) {
+      hdfsDebugLog("Error in sync path %s\n", filename_.c_str());
+
+      s = IOError(filename_, errno);
+    }
+    return s;
+  }
+};
+/* End: HDFS Env */
+
 class PosixSequentialFile: public SequentialFile {
  private:
   std::string filename_;
@@ -165,45 +279,27 @@ static int LockOrUnlock(int fd, bool lock) {
   return 0;
 }
 
-#ifdef PLATFORM_HDFS_UNUSED
-void getNewFileName(const std::string& fname, std::string& new_fname) {
-  printf("getNewFileName(%s) -- \n", fname.c_str());
-  std::string split_dir = "/users/aditm/_splits";
-  if(!fname.compare(0, split_dir.size(), split_dir)) {
-    //printf("getNewFileName(%s) -- ", fname.c_str());
-    new_fname.append(split_dir);
-    new_fname.append("_am_test");
-    if(fname.size() > split_dir.size())
-      new_fname.append(fname.substr(split_dir.size()));
-/*    size_t pos = fname.find_last_of(".");
-    std::string ext = fname.substr(pos+1);
-    if(ext.size() != 0) {
-      new_fname.append(".");
-      new_fname.append(ext);
-*/
-    printf("**VOILA!** ");
-    printf("return [%s]\n", new_fname.c_str());
-  } else {
-    new_fname.append(fname);
-  }
-}
-#endif
-
 class PosixFileLock : public FileLock {
  public:
   int fd_;
 };
-
+  
 class PosixEnv : public Env {
  public:
   PosixEnv();
   virtual ~PosixEnv() {
     fprintf(stderr, "Destroying Env::Default()\n");
+    hdfsDisconnect(hdfs_fs_);
     exit(1);
   }
 
   virtual Status NewSequentialFile(const std::string& fname,
                                    SequentialFile** result) {
+    if(onHDFS(fname)) {
+      fprintf(stdout, "HDFS: New Sequential Access File. Operation not supported %s\n", fname.c_str());
+      exit(0);
+    }
+
     FILE* f = fopen(fname.c_str(), "r");
     if (f == NULL) {
       *result = NULL;
@@ -218,11 +314,36 @@ class PosixEnv : public Env {
                                      RandomAccessFile** result) {
     *result = NULL;
     Status s;
-    int fd = open(fname.c_str(), O_RDONLY);
-    if (fd < 0) {
-      s = IOError(fname, errno);
+    
+    if(onHDFS(fname)) {
+      hdfsFile new_file = NULL;
+      int tries = 0;
+      while(tries++ < 3 && new_file == NULL) {
+        new_file = hdfsOpenFile(hdfs_fs_, fname.c_str(), O_RDONLY, 0, 1, 0);
+      }
+
+      if(new_file == NULL) {
+        //hdfsFile create_file = hdfsOpenFile(hdfs_fs_, fname.c_str(), O_WRONLY|O_CREAT, 0, 1, 0);
+        //if(create_file != NULL) {
+        //  hdfsCloseFile(hdfs_fs_, create_file);
+        //}
+        new_file = hdfsOpenFile(hdfs_fs_, fname.c_str(), O_RDONLY, 0, 1, 0);
+      }
+
+      if (new_file == NULL) {
+        hdfsDebugLog("Error on open random access file path %s\n", fname.c_str());
+
+        s = IOError(fname, errno);
+      } else {
+        *result = new HDFSRandomAccessFile(fname, new_file);
+      }
     } else {
-      *result = new PosixRandomAccessFile(fname, fd);
+      int fd = open(fname.c_str(), O_RDONLY);
+      if (fd < 0) {
+        s = IOError(fname, errno);
+      } else {
+        *result = new PosixRandomAccessFile(fname, fd);
+      }
     }
     return s;
   }
@@ -230,23 +351,65 @@ class PosixEnv : public Env {
   virtual Status NewWritableFile(const std::string& fname,
                                  WritableFile** result) {
     Status s;
-    const int fd = open(fname.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0644);
-    if (fd < 0) {
-      *result = NULL;
-      s = IOError(fname, errno);
-    } else {
-      *result = new PosixWritableFile(fname, fd);
+    
+    if(onHDFS(fname)) {
+      int exists = hdfsExists(hdfs_fs_, fname.c_str());
+      hdfsFile new_file;
+      //if (exists > -1) {
+      //  new_file = hdfsOpenFile(hdfs_fs_, fname.c_str(), O_WRONLY|O_APPEND, 0, 1, 0);
+      //} else{
+        new_file = hdfsOpenFile(hdfs_fs_, fname.c_str(), O_WRONLY|O_CREAT, 0, 1, 0);
+      //}
+      if (new_file == NULL) {
+        hdfsDebugLog("Error on writable path %s\n", fname.c_str());
+
+        *result = NULL;
+        s = IOError(fname, errno);
+      } else {
+        *result = new HDFSWritableFile(fname, new_file);
+      }
+    } else {  
+      const int fd = open(fname.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0644);
+      if (fd < 0) {
+        *result = NULL;
+        s = IOError(fname, errno);
+      } else {
+        *result = new PosixWritableFile(fname, fd);
+      }
     }
     return s;
   }
 
   virtual bool FileExists(const std::string& fname) {
+    if(onHDFS(fname)) {
+      hdfsDebugLog("Check file exists path %s\n", fname.c_str());
+
+      return (hdfsExists(hdfs_fs_, fname.c_str()) == 0);
+    }
     return access(fname.c_str(), F_OK) == 0;
   }
 
   virtual Status GetChildren(const std::string& dir,
                              std::vector<std::string>* result) {
+    hdfsDebugLog("Get children path %s\n", dir.c_str());
+
     result->clear();
+
+    //TODO: Directory read from both HDFS and local FS 
+    int num_entries = 0;
+    hdfsFileInfo* entries = hdfsListDirectory(hdfs_fs_, dir.c_str(), &num_entries);
+    if(entries == NULL) {
+      hdfsDebugLog("Error in get children path %s. Num entries=%d\n", dir.c_str(), num_entries);
+
+      //TODO:
+      //return IOError(dir, errno);
+    } else {  
+      for (int i = 0; i < num_entries; ++i) {
+        result->push_back(entries[i].mName);
+      }
+      hdfsFreeFileInfo(entries, num_entries);   
+    }
+
     DIR* d = opendir(dir.c_str());
     if (d == NULL) {
       return IOError(dir, errno);
@@ -256,19 +419,38 @@ class PosixEnv : public Env {
       result->push_back(entry->d_name);
     }
     closedir(d);
+    
     return Status::OK();
   }
 
   virtual Status DeleteFile(const std::string& fname) {
     Status result;
-    if (unlink(fname.c_str()) != 0) {
+    if(onHDFS(fname)) {
+      hdfsDebugLog("Delete file path %s\n", fname.c_str());
+
+      if (hdfsDelete(hdfs_fs_, fname.c_str(), 0) != 0) {
+      	hdfsDebugLog("Error delete file path %s\n", fname.c_str());
+
+        result = IOError(fname, errno);
+      }
+    } else if (unlink(fname.c_str()) != 0) {
       result = IOError(fname, errno);
     }
     return result;
   };
 
   virtual Status CreateDir(const std::string& name) {
+    hdfsDebugLog("Create dir %s\n", name.c_str());
+
     Status result;
+    if (hdfsCreateDirectory(hdfs_fs_, name.c_str()) != 0) {
+      hdfsDebugLog("Error in create dir %s\n", name.c_str());
+
+      result = IOError(name, errno);
+    } else {
+      hdfsChmod(hdfs_fs_, name.c_str(), 0755);
+    }
+
     if (mkdir(name.c_str(), 0755) != 0) {
       result = IOError(name, errno);
     }
@@ -276,7 +458,15 @@ class PosixEnv : public Env {
   };
 
   virtual Status DeleteDir(const std::string& name) {
+    hdfsDebugLog("Delete dir %s\n", name.c_str());
+
     Status result;
+    if (hdfsDelete(hdfs_fs_, name.c_str(), 1) != 0) {
+      hdfsDebugLog("Error in delete dir %s\n", name.c_str());
+
+      result = IOError(name, errno);
+    }
+
     if (rmdir(name.c_str()) != 0) {
       result = IOError(name, errno);
     }
@@ -284,6 +474,11 @@ class PosixEnv : public Env {
   };
 
   virtual Status GetFileSize(const std::string& fname, uint64_t* size) {
+    if(onHDFS(fname)) {
+      fprintf(stdout, "HDFS: Get File Size %s not implemented\n", fname.c_str());
+      exit(0);
+    }
+
     Status s;
     struct stat sbuf;
     if (stat(fname.c_str(), &sbuf) != 0) {
@@ -296,8 +491,12 @@ class PosixEnv : public Env {
   }
 
   virtual Status CopyFile(const std::string& src, const std::string& target) {
-    Status result;
+    if(onHDFS(src) || onHDFS(target)) {
+      fprintf(stdout, "HDFS: Copy File src:%s target:%s not implemented\n", src.c_str(), target.c_str());
+      exit(0);
+    }
 
+    Status result;
     int r_fd, w_fd;
     if ((r_fd = open(src.c_str(), O_RDONLY)) < 0) {
       result = IOError(src, errno);
@@ -320,6 +519,11 @@ class PosixEnv : public Env {
   }
 
   virtual Status SymlinkFile(const std::string& src, const std::string& target) {
+    if(onHDFS(src) || onHDFS(target)) {
+      fprintf(stdout, "HDFS: Symlink File src:%s target:%s. Not supported\n", src.c_str(), target.c_str());
+      exit(0);
+    }
+    
     Status result;
 
     if (symlink(src.c_str(), target.c_str()) != 0) {
@@ -329,6 +533,11 @@ class PosixEnv : public Env {
   }
 
   virtual Status RenameFile(const std::string& src, const std::string& target) {
+    if(onHDFS(src) || onHDFS(target)) {
+      fprintf(stdout, "HDFS: Rename File src:%s target:%s not implemented\n", src.c_str(), target.c_str());
+      exit(0);
+    }
+
     Status result;
     if (rename(src.c_str(), target.c_str()) != 0) {
       result = IOError(src, errno);
@@ -337,6 +546,11 @@ class PosixEnv : public Env {
   }
 
   virtual Status LinkFile(const std::string& src, const std::string& target) {
+    if(onHDFS(src) || onHDFS(target)) {
+      fprintf(stdout, "HDFS: Link File src:%s target:%s. Not supported\n", src.c_str(), target.c_str());
+      exit(0);
+    }
+    
     Status result;
     if (link(src.c_str(), target.c_str()) != 0) {
       result = IOError(src, errno);
@@ -345,6 +559,11 @@ class PosixEnv : public Env {
   }
 
   virtual Status LockFile(const std::string& fname, FileLock** lock) {
+    if(onHDFS(fname)) {
+      fprintf(stdout, "HDFS: Lock File %s. Not supported\n", fname.c_str());
+      exit(0);
+    }
+    
     *lock = NULL;
     Status result;
     int fd = open(fname.c_str(), O_RDWR | O_CREAT, 0644);
@@ -449,24 +668,10 @@ PosixEnv::PosixEnv() : page_size_(getpagesize()),
                        started_bgthread_(false) {
   PthreadCall("mutex_init", pthread_mutex_init(&mu_, NULL));
   PthreadCall("cvar_init", pthread_cond_init(&bgsignal_, NULL));
+
 #ifdef PLATFORM_HDFS
-  fprintf(stdout, "HDFS: Connect for writing!\n");
-  hdfsFS fs = hdfsConnect("10.1.1.29", 8020);
-  const char* writePath = "/testfile.txt";
-  fprintf(stdout, "HDFS: Open %s for writing!\n", writePath);
-	hdfsFile writeFile = hdfsOpenFile(fs, writePath, O_WRONLY|O_CREAT, 0, 0, 0);
-	if(!writeFile) {
-		fprintf(stderr, "Failed to open %s for writing!\n", writePath);
-		exit(-1);
-	}
-  fprintf(stdout, "HDFS: Write buffer\n", writePath);
-	char* buffer = "Hello, World!";
-	tSize num_written_bytes = hdfsWrite(fs, writeFile, (void*)buffer, strlen(buffer)+1);
-	if (hdfsFlush(fs, writeFile)) {
-		fprintf(stderr, "Failed to 'flush' %s\n", writePath); 
-		exit(-1);
-	}
-	hdfsCloseFile(fs, writeFile);
+  fprintf(stdout, "HDFS: Connect...\n");
+  hdfs_fs_ = hdfsConnect(primaryNamenode, 8020);
 #endif
 }
 

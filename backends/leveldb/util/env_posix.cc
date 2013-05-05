@@ -30,6 +30,51 @@
 #include "hdfs.h"
 #endif
 
+#include <arpa/inet.h>
+#include <sys/types.h> 
+#include <sys/socket.h> 
+#include <netdb.h> 
+//TODO: Duplicate Code ! Copied from common/connection.c
+static void getHostIPAddress(char *ip_addr, int ip_addr_len)
+{
+    char hostname[HOST_NAME_MAX] = {0};
+    hostname[HOST_NAME_MAX-1] = '\0';
+    gethostname(hostname, HOST_NAME_MAX-1);
+
+    int gai_result;
+    struct addrinfo hints, *info;
+
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_CANONNAME;
+    hints.ai_protocol = 0;
+
+    if ((gai_result = getaddrinfo(hostname, NULL, &hints, &info)) != 0) {
+        fprintf(stdout, "[%s] getaddrinfo(%s) failed. [%s]\n",
+                __func__, hostname, gai_strerror(gai_result));
+        exit(1);
+    }
+
+    void *ptr = NULL;
+    struct addrinfo *p;
+    for (p = info; p != NULL; p = p->ai_next) {
+        inet_ntop (p->ai_family, p->ai_addr->sa_data, ip_addr, ip_addr_len);
+        switch (p->ai_family) {
+            case AF_INET:
+                ptr = &((struct sockaddr_in *) p->ai_addr)->sin_addr;
+                break;
+            case AF_INET6:
+                ptr = &((struct sockaddr_in6 *) p->ai_addr)->sin6_addr;
+                break;
+        }
+
+        inet_ntop (p->ai_family, ptr, ip_addr, ip_addr_len);
+    }
+
+    return;
+}
+
 namespace leveldb {
 
 namespace {
@@ -39,7 +84,7 @@ static Status IOError(const std::string& context, int err_number) {
 }
 
 /* Begin: HDFS Env */
-static const char *primaryNamenode = "10.1.1.74";
+//static const char *primaryNamenode = "10.1.1.74";
 
 #define HDFS_VERBOSITY 1
 
@@ -721,8 +766,10 @@ PosixEnv::PosixEnv() : page_size_(getpagesize()),
   PthreadCall("cvar_init", pthread_cond_init(&bgsignal_, NULL));
 
 #ifdef PLATFORM_HDFS
-  fprintf(stdout, "HDFS: Connect...\n");
-  hdfs_fs_ = hdfsConnect(primaryNamenode, 8020);
+	char ip_addr[HOST_NAME_MAX];
+	getHostIPAddress(ip_addr, HOST_NAME_MAX);
+  fprintf(stdout, "HDFS: Connectingg to %s...\n", ip_addr);
+  hdfs_fs_ = hdfsConnect(ip_addr, 8020);
 #endif
 }
 

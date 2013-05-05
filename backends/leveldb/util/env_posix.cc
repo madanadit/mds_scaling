@@ -39,7 +39,7 @@ static Status IOError(const std::string& context, int err_number) {
 }
 
 /* Begin: HDFS Env */
-static const char *primaryNamenode = "10.1.1.61";
+static const char *primaryNamenode = "10.1.1.74";
 
 void hdfsDebugLog( const char* format, ... ) {
     va_list args;
@@ -53,14 +53,55 @@ static bool onHDFS(const std::string &fname) {
   bool on_hdfs = false;
 #ifdef PLATFORM_HDFS
   static const std::string ext_sst = ".sst";
+  static const std::string ext_log = ".log";
   if (fname.length() >= ext_sst.length()) {
-    on_hdfs =  !fname.compare(fname.length() - ext_sst.length(), ext_sst.length(), ext_sst);
+    on_hdfs =  (!fname.compare(fname.length() - ext_sst.length(), ext_sst.length(), ext_sst))
+      || (!fname.compare(fname.length() - ext_log.length(), ext_log.length(), ext_log));
   }
 #endif
   return on_hdfs;
 }
 
 static hdfsFS hdfs_fs_;
+
+class HDFSSequentialFile: public SequentialFile {
+ private:
+  std::string filename_;
+  hdfsFile file_;
+
+ public:
+  HDFSSequentialFile(const std::string& fname, hdfsFile f)
+      : filename_(fname), file_(f) { }
+  virtual ~HDFSSequentialFile() { hdfsCloseFile(hdfs_fs_,file_); }
+
+  virtual Status Read(size_t n, Slice* result, char* scratch) {
+    Status s;
+    tSize r = hdfsRead(hdfs_fs_, file_, scratch, n);
+    *result = Slice(scratch, r);
+    if (r < n) {
+      if ( r != -1) {
+        // We leave status as ok if we hit the end of the file
+      } else {
+        // A partial read with an error: return a non-ok status
+        s = IOError(filename_, errno);
+      }
+    }
+    return s;
+  }
+
+  virtual Status Skip(uint64_t n) {
+   	tOffset cur = hdfsTell(hdfs_fs_, file_);
+		if(cur == -1) {
+      return IOError(filename_, errno);
+		}
+
+		int r = hdfsSeek(hdfs_fs_, file_, cur + static_cast<tOffset>(n)); 
+    if (r != 0) {
+      return IOError(filename_, errno);
+    }
+    return Status::OK();
+  }
+};
 
 class HDFSRandomAccessFile: public RandomAccessFile {
  private:
@@ -296,18 +337,24 @@ class PosixEnv : public Env {
   virtual Status NewSequentialFile(const std::string& fname,
                                    SequentialFile** result) {
     if(onHDFS(fname)) {
-      fprintf(stdout, "HDFS: New Sequential Access File. Operation not supported %s\n", fname.c_str());
-      exit(0);
-    }
-
-    FILE* f = fopen(fname.c_str(), "r");
-    if (f == NULL) {
-      *result = NULL;
-      return IOError(fname, errno);
-    } else {
-      *result = new PosixSequentialFile(fname, f);
-      return Status::OK();
-    }
+    	hdfsFile f = hdfsOpenFile(hdfs_fs_, fname.c_str(), O_RDONLY, 0, 1, 0);
+			if (f == NULL) {
+				*result = NULL;
+				return IOError(fname, errno);
+			} else {
+				*result = new HDFSSequentialFile(fname, f);
+				return Status::OK();
+			}
+		} else {
+			FILE* f = fopen(fname.c_str(), "r");
+			if (f == NULL) {
+				*result = NULL;
+				return IOError(fname, errno);
+			} else {
+				*result = new PosixSequentialFile(fname, f);
+				return Status::OK();
+			}
+		}
   }
 
   virtual Status NewRandomAccessFile(const std::string& fname,

@@ -41,11 +41,15 @@ static Status IOError(const std::string& context, int err_number) {
 /* Begin: HDFS Env */
 static const char *primaryNamenode = "10.1.1.74";
 
-void hdfsDebugLog( const char* format, ... ) {
-    va_list args;
-    va_start( args, format );
-    vfprintf( stdout, format, args );
-    va_end( args );
+#define HDFS_VERBOSITY 1
+
+void hdfsDebugLog(short verbosity, const char* format, ... ) {
+    if(verbosity <= HDFS_VERBOSITY) {
+			va_list args;
+    	va_start( args, format );
+    	vfprintf( stdout, format, args );
+    	va_end( args );
+		}
 }
 
 //Check if the file should be accessed from HDFS
@@ -115,13 +119,13 @@ class HDFSRandomAccessFile: public RandomAccessFile {
 
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
                       char* scratch) const {
-    hdfsDebugLog("Read path %s\n", filename_.c_str());
+    hdfsDebugLog(2, "Read path %s\n", filename_.c_str());
 
     Status s;
     ssize_t r = hdfsPread(hdfs_fs_, file_, static_cast<tOffset>(offset), scratch, static_cast<tSize>(n));
     *result = Slice(scratch, (r < 0) ? 0 : r);
     if (r < 0) {
-      hdfsDebugLog("Error in Read path %s\n", filename_.c_str());
+      hdfsDebugLog(0, "Error in Read path %s\n", filename_.c_str());
       // An error: return a non-ok status
       s = IOError(filename_, errno);
     }
@@ -147,12 +151,12 @@ class HDFSWritableFile : public WritableFile {
   }
 
   virtual Status Append(const Slice& data) {
-    //hdfsDebugLog("Append path %s\n", filename_.c_str());
+    hdfsDebugLog(2, "Append path %s\n", filename_.c_str());
 
     const char* src = data.data();
     size_t data_size = data.size();
     if (hdfsWrite(hdfs_fs_, file_, src, data_size) < 0) {
-      hdfsDebugLog("Error in append path %s\n", filename_.c_str());
+      hdfsDebugLog(0, "Error in append path %s\n", filename_.c_str());
       return IOError(filename_, errno);
     }
 
@@ -160,11 +164,11 @@ class HDFSWritableFile : public WritableFile {
   }
 
   virtual Status Close() {
-    hdfsDebugLog("Close path %s\n", filename_.c_str());
+    hdfsDebugLog(1, "Close path %s\n", filename_.c_str());
 
     Status s;
     if (hdfsCloseFile(hdfs_fs_, file_) < 0) {
-      hdfsDebugLog("Error in close path %s\n", filename_.c_str());
+      hdfsDebugLog(0, "Error in close path %s\n", filename_.c_str());
 
       if (s.ok()) {
         s = IOError(filename_, errno);
@@ -179,12 +183,12 @@ class HDFSWritableFile : public WritableFile {
   }
 
   virtual Status Sync() {
-    hdfsDebugLog("Sync path %s\n", filename_.c_str());
+    hdfsDebugLog(2, "Sync path %s\n", filename_.c_str());
 
     Status s;
 
     if(hdfsFlush(hdfs_fs_, file_) < 0) {
-      hdfsDebugLog("Error in sync path %s\n", filename_.c_str());
+      hdfsDebugLog(0, "Error in sync path %s\n", filename_.c_str());
 
       s = IOError(filename_, errno);
     }
@@ -378,7 +382,7 @@ class PosixEnv : public Env {
       }
 
       if (new_file == NULL) {
-        hdfsDebugLog("Error on open random access file path %s\n", fname.c_str());
+        hdfsDebugLog(0, "Error on open random access file path %s\n", fname.c_str());
 
         s = IOError(fname, errno);
       } else {
@@ -408,7 +412,7 @@ class PosixEnv : public Env {
         new_file = hdfsOpenFile(hdfs_fs_, fname.c_str(), O_WRONLY|O_CREAT, 0, 1, 0);
       //}
       if (new_file == NULL) {
-        hdfsDebugLog("Error on writable path %s\n", fname.c_str());
+        hdfsDebugLog(0, "Error on writable path %s\n", fname.c_str());
 
         *result = NULL;
         s = IOError(fname, errno);
@@ -429,7 +433,7 @@ class PosixEnv : public Env {
 
   virtual bool FileExists(const std::string& fname) {
     if(onHDFS(fname)) {
-      hdfsDebugLog("Check file exists path %s\n", fname.c_str());
+      hdfsDebugLog(1, "Check file exists path %s\n", fname.c_str());
 
       return (hdfsExists(hdfs_fs_, fname.c_str()) == 0);
     }
@@ -438,7 +442,7 @@ class PosixEnv : public Env {
 
   virtual Status GetChildren(const std::string& dir,
                              std::vector<std::string>* result) {
-    hdfsDebugLog("Get children path %s\n", dir.c_str());
+    hdfsDebugLog(1, "Get children path %s\n", dir.c_str());
 
     result->clear();
 
@@ -446,7 +450,7 @@ class PosixEnv : public Env {
     int num_entries = 0;
     hdfsFileInfo* entries = hdfsListDirectory(hdfs_fs_, dir.c_str(), &num_entries);
     if(entries == NULL) {
-      hdfsDebugLog("Error in get children path %s. Num entries=%d\n", dir.c_str(), num_entries);
+      hdfsDebugLog(0, "Error in get children path %s. Num entries=%d\n", dir.c_str(), num_entries);
 
       //TODO:
       //return IOError(dir, errno);
@@ -473,10 +477,10 @@ class PosixEnv : public Env {
   virtual Status DeleteFile(const std::string& fname) {
     Status result;
     if(onHDFS(fname)) {
-      hdfsDebugLog("Delete file path %s\n", fname.c_str());
+      hdfsDebugLog(1, "Delete file path %s\n", fname.c_str());
 
       if (hdfsDelete(hdfs_fs_, fname.c_str(), 0) != 0) {
-      	hdfsDebugLog("Error delete file path %s\n", fname.c_str());
+      	hdfsDebugLog(0, "Error delete file path %s\n", fname.c_str());
 
         result = IOError(fname, errno);
       }
@@ -487,11 +491,11 @@ class PosixEnv : public Env {
   };
 
   virtual Status CreateDir(const std::string& name) {
-    hdfsDebugLog("Create dir %s\n", name.c_str());
+    hdfsDebugLog(1, "Create dir %s\n", name.c_str());
 
     Status result;
     if (hdfsCreateDirectory(hdfs_fs_, name.c_str()) != 0) {
-      hdfsDebugLog("Error in create dir %s\n", name.c_str());
+      hdfsDebugLog(0, "Error in create dir %s\n", name.c_str());
 
       result = IOError(name, errno);
     } else {
@@ -505,11 +509,11 @@ class PosixEnv : public Env {
   };
 
   virtual Status DeleteDir(const std::string& name) {
-    hdfsDebugLog("Delete dir %s\n", name.c_str());
+    hdfsDebugLog(1, "Delete dir %s\n", name.c_str());
 
     Status result;
     if (hdfsDelete(hdfs_fs_, name.c_str(), 1) != 0) {
-      hdfsDebugLog("Error in delete dir %s\n", name.c_str());
+      hdfsDebugLog(0, "Error in delete dir %s\n", name.c_str());
 
       result = IOError(name, errno);
     }

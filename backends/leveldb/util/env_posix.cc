@@ -30,13 +30,16 @@
 #include "hdfs.h"
 #endif
 
+#include <map>
 #include <arpa/inet.h>
 #include <sys/types.h> 
 #include <sys/socket.h> 
 #include <netdb.h> 
 //TODO: Duplicate Code ! Copied from common/connection.c
-static void getHostIPAddress(char *ip_addr, int ip_addr_len)
+static std::string getHostIPAddress()
 {
+		char ip_addr[HOST_NAME_MAX];
+
     char hostname[HOST_NAME_MAX] = {0};
     hostname[HOST_NAME_MAX-1] = '\0';
     gethostname(hostname, HOST_NAME_MAX-1);
@@ -59,7 +62,7 @@ static void getHostIPAddress(char *ip_addr, int ip_addr_len)
     void *ptr = NULL;
     struct addrinfo *p;
     for (p = info; p != NULL; p = p->ai_next) {
-        inet_ntop (p->ai_family, p->ai_addr->sa_data, ip_addr, ip_addr_len);
+        inet_ntop (p->ai_family, p->ai_addr->sa_data, ip_addr, HOST_NAME_MAX);
         switch (p->ai_family) {
             case AF_INET:
                 ptr = &((struct sockaddr_in *) p->ai_addr)->sin_addr;
@@ -69,10 +72,11 @@ static void getHostIPAddress(char *ip_addr, int ip_addr_len)
                 break;
         }
 
-        inet_ntop (p->ai_family, ptr, ip_addr, ip_addr_len);
+        inet_ntop (p->ai_family, ptr, ip_addr, HOST_NAME_MAX);
     }
 
-    return;
+		std::string host_ip(ip_addr);
+    return host_ip;
 }
 
 namespace leveldb {
@@ -111,17 +115,75 @@ static bool onHDFS(const std::string &fname) {
   return on_hdfs;
 }
 
-static hdfsFS hdfs_fs_;
+static hdfsFS hdfs_primary_fs_;
+static std::map<std::string, hdfsFS> hdfs_connections_;
+
+static const std::string hdfs_prefix = "hdfs://";
+static bool isRemote(const std::string& fname) {
+	return fname.compare(0, hdfs_prefix.length(), hdfs_prefix) == 0;
+}
+
+std::string getHost(const std::string &fname) {
+	int end;
+	for(end = hdfs_prefix.length(); end < fname.length(); ++end) {
+		if(fname.at(end) == '/') {
+			break;
+		}	
+	}	
+	std::string host = fname.substr(hdfs_prefix.length(), end - hdfs_prefix.length());	
+	hdfsDebugLog(1, "HDFS: Resolving host from remote path[%s] host[%s] \n", 
+		fname.c_str(), host.c_str());
+	return host;
+}
+
+std::string getPath(const std::string &fname) {
+	std::string new_path(fname);
+	if(isRemote(fname)) {
+		std::string host = getHost(fname);	
+		new_path = fname.substr(hdfs_prefix.length() + host.length(), 
+			fname.length() - hdfs_prefix.length() - host.length());	
+		hdfsDebugLog(1, "HDFS: Resolving path from remote path[%s] path[%s] \n", 
+			fname.c_str(), new_path.c_str());
+	}
+	return new_path;
+}
+
+static hdfsFS connectFS(const std::string &fname) {
+	hdfsFS hdfs_fs;
+	if(!isRemote(fname) || !getHost(fname).compare(getHostIPAddress())) {
+		hdfs_fs = hdfs_primary_fs_;
+	} else {
+		std::string secondary_host = getHost(fname); 
+		if(hdfs_connections_.find(secondary_host) == hdfs_connections_.end()) {
+			hdfsDebugLog(0, "HDFS: Connecting to secondary host %s\n", secondary_host.c_str());
+  		hdfs_fs = hdfsConnect(secondary_host.c_str(), 8020);
+		} else {
+			hdfsDebugLog(1, "HDFS: Found in secondary host map %s\n", secondary_host.c_str());
+			hdfs_fs = hdfs_connections_[secondary_host];
+		}
+	}
+	return hdfs_fs;
+}
+
+static void hdfsDisconnect_all() {
+	//TODO:
+}
 
 class HDFSSequentialFile: public SequentialFile {
  private:
   std::string filename_;
   hdfsFile file_;
+	hdfsFS hdfs_fs_;
 
  public:
   HDFSSequentialFile(const std::string& fname, hdfsFile f)
-      : filename_(fname), file_(f) { }
-  virtual ~HDFSSequentialFile() { hdfsCloseFile(hdfs_fs_,file_); }
+      : filename_(fname), file_(f){
+		hdfs_fs_ = connectFS(fname);
+		filename_ = getPath(fname);
+	}
+  virtual ~HDFSSequentialFile() { 
+		hdfsCloseFile(hdfs_fs_,file_);
+	}
 
   virtual Status Read(size_t n, Slice* result, char* scratch) {
     Status s;
@@ -156,12 +218,17 @@ class HDFSRandomAccessFile: public RandomAccessFile {
  private:
   std::string filename_;
   hdfsFile file_;
+	hdfsFS hdfs_fs_;
 
  public:
   HDFSRandomAccessFile(const std::string& fname, hdfsFile file)
-      : filename_(fname), file_(file) { }
-  virtual ~HDFSRandomAccessFile() { hdfsCloseFile(hdfs_fs_, file_); }
-
+      : filename_(fname), file_(file) { 
+		hdfs_fs_ = connectFS(fname);
+		filename_ = getPath(fname);
+	}
+  virtual ~HDFSRandomAccessFile() { 
+		hdfsCloseFile(hdfs_fs_, file_);
+	}
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
                       char* scratch) const {
     hdfsDebugLog(2, "Read path %s\n", filename_.c_str());
@@ -182,11 +249,14 @@ class HDFSWritableFile : public WritableFile {
  private:
   std::string filename_;
   hdfsFile file_;
+	hdfsFS hdfs_fs_;
 
  public:
   HDFSWritableFile(const std::string& fname, hdfsFile file)
       : filename_(fname),
         file_(file){
+		hdfs_fs_ = connectFS(fname);
+		filename_ = getPath(fname);
   }
 
   ~HDFSWritableFile() {
@@ -379,14 +449,16 @@ class PosixEnv : public Env {
   PosixEnv();
   virtual ~PosixEnv() {
     fprintf(stderr, "Destroying Env::Default()\n");
-    hdfsDisconnect(hdfs_fs_);
+    hdfsDisconnect(hdfs_primary_fs_);
+		hdfsDisconnect_all();
     exit(1);
   }
 
   virtual Status NewSequentialFile(const std::string& fname,
                                    SequentialFile** result) {
     if(onHDFS(fname)) {
-    	hdfsFile f = hdfsOpenFile(hdfs_fs_, fname.c_str(), O_RDONLY, 0, 1, 0);
+			std::string filename = getPath(fname);
+    	hdfsFile f = hdfsOpenFile(connectFS(fname), filename.c_str(), O_RDONLY, 0, 1, 0);
 			if (f == NULL) {
 				*result = NULL;
 				return IOError(fname, errno);
@@ -412,10 +484,11 @@ class PosixEnv : public Env {
     Status s;
     
     if(onHDFS(fname)) {
+			std::string filename = getPath(fname);
       hdfsFile new_file = NULL;
       int tries = 0;
       while(tries++ < 3 && new_file == NULL) {
-        new_file = hdfsOpenFile(hdfs_fs_, fname.c_str(), O_RDONLY, 0, 1, 0);
+        new_file = hdfsOpenFile(connectFS(fname), filename.c_str(), O_RDONLY, 0, 1, 0);
       }
 
       if(new_file == NULL) {
@@ -423,7 +496,7 @@ class PosixEnv : public Env {
         //if(create_file != NULL) {
         //  hdfsCloseFile(hdfs_fs_, create_file);
         //}
-        new_file = hdfsOpenFile(hdfs_fs_, fname.c_str(), O_RDONLY, 0, 1, 0);
+        new_file = hdfsOpenFile(connectFS(fname), filename.c_str(), O_RDONLY, 0, 1, 0);
       }
 
       if (new_file == NULL) {
@@ -449,12 +522,13 @@ class PosixEnv : public Env {
     Status s;
     
     if(onHDFS(fname)) {
-      int exists = hdfsExists(hdfs_fs_, fname.c_str());
+			std::string filename = getPath(fname);
+      int exists = hdfsExists(connectFS(fname), filename.c_str());
       hdfsFile new_file;
       //if (exists > -1) {
       //  new_file = hdfsOpenFile(hdfs_fs_, fname.c_str(), O_WRONLY|O_APPEND, 0, 1, 0);
       //} else{
-        new_file = hdfsOpenFile(hdfs_fs_, fname.c_str(), O_WRONLY|O_CREAT, 0, 1, 0);
+        new_file = hdfsOpenFile(connectFS(fname), filename.c_str(), O_WRONLY|O_CREAT, 0, 1, 0);
       //}
       if (new_file == NULL) {
         hdfsDebugLog(0, "Error on writable path %s\n", fname.c_str());
@@ -478,9 +552,10 @@ class PosixEnv : public Env {
 
   virtual bool FileExists(const std::string& fname) {
     if(onHDFS(fname)) {
+			std::string filename = getPath(fname);
       hdfsDebugLog(1, "Check file exists path %s\n", fname.c_str());
 
-      return (hdfsExists(hdfs_fs_, fname.c_str()) == 0);
+      return (hdfsExists(connectFS(fname), filename.c_str()) == 0);
     }
     return access(fname.c_str(), F_OK) == 0;
   }
@@ -493,7 +568,7 @@ class PosixEnv : public Env {
 
     //TODO: Directory read from both HDFS and local FS 
     int num_entries = 0;
-    hdfsFileInfo* entries = hdfsListDirectory(hdfs_fs_, dir.c_str(), &num_entries);
+    hdfsFileInfo* entries = hdfsListDirectory(hdfs_primary_fs_, dir.c_str(), &num_entries);
     if(entries == NULL) {
       hdfsDebugLog(0, "Error in get children path %s. Num entries=%d\n", dir.c_str(), num_entries);
 
@@ -522,9 +597,10 @@ class PosixEnv : public Env {
   virtual Status DeleteFile(const std::string& fname) {
     Status result;
     if(onHDFS(fname)) {
+			std::string filename = getPath(fname);
       hdfsDebugLog(1, "Delete file path %s\n", fname.c_str());
 
-      if (hdfsDelete(hdfs_fs_, fname.c_str(), 0) != 0) {
+      if (hdfsDelete(connectFS(fname), filename.c_str(), 0) != 0) {
       	hdfsDebugLog(0, "Error delete file path %s\n", fname.c_str());
 
         result = IOError(fname, errno);
@@ -539,12 +615,12 @@ class PosixEnv : public Env {
     hdfsDebugLog(1, "Create dir %s\n", name.c_str());
 
     Status result;
-    if (hdfsCreateDirectory(hdfs_fs_, name.c_str()) != 0) {
+    if (hdfsCreateDirectory(hdfs_primary_fs_, name.c_str()) != 0) {
       hdfsDebugLog(0, "Error in create dir %s\n", name.c_str());
 
       result = IOError(name, errno);
     } else {
-      hdfsChmod(hdfs_fs_, name.c_str(), 0755);
+      hdfsChmod(hdfs_primary_fs_, name.c_str(), 0755);
     }
 
     if (mkdir(name.c_str(), 0755) != 0) {
@@ -557,7 +633,7 @@ class PosixEnv : public Env {
     hdfsDebugLog(1, "Delete dir %s\n", name.c_str());
 
     Status result;
-    if (hdfsDelete(hdfs_fs_, name.c_str(), 1) != 0) {
+    if (hdfsDelete(hdfs_primary_fs_, name.c_str(), 1) != 0) {
       hdfsDebugLog(0, "Error in delete dir %s\n", name.c_str());
 
       result = IOError(name, errno);
@@ -766,10 +842,9 @@ PosixEnv::PosixEnv() : page_size_(getpagesize()),
   PthreadCall("cvar_init", pthread_cond_init(&bgsignal_, NULL));
 
 #ifdef PLATFORM_HDFS
-	char ip_addr[HOST_NAME_MAX];
-	getHostIPAddress(ip_addr, HOST_NAME_MAX);
-  fprintf(stdout, "HDFS: Connectingg to %s...\n", ip_addr);
-  hdfs_fs_ = hdfsConnect(ip_addr, 8020);
+	std::string ip_addr = getHostIPAddress();
+  fprintf(stdout, "HDFS: Connecting to %s...\n", ip_addr.c_str());
+  hdfs_primary_fs_ = hdfsConnect(ip_addr.c_str(), 8020);
 #endif
 }
 

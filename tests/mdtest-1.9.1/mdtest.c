@@ -59,6 +59,8 @@
 #include <sys/statvfs.h>
 #endif
 
+#define ROOT_ONLY
+
 #define FILEMODE S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH
 #define DIRMODE S_IRUSR|S_IWUSR|S_IXUSR|S_IRGRP|S_IWGRP|S_IXGRP|S_IROTH|S_IXOTH
 /*
@@ -422,7 +424,11 @@ void create_remove_items_helper(int dirs,
         }
 
         //create files
+#ifdef ROOT_ONLY
+        sprintf(curr_item, "/file.%s%llu", mk_name, itemNum+i);
+#else
         sprintf(curr_item, "%s/file.%s%llu", path, mk_name, itemNum+i);
+#endif
         if (rank == 0 && verbose >= 3) {
           printf("V-3: create_remove_items_helper (non-dirs create): curr_item is \"%s\"\n", curr_item);
           fflush(stdout);
@@ -697,7 +703,11 @@ void create_remove_items_helper(int dirs,
         }
 
         //remove files
+#ifdef ROOT_ONLY
+        sprintf(curr_item, "/file.%s%llu", rm_name, itemNum+i);
+#else
         sprintf(curr_item, "%s/file.%s%llu", path, rm_name, itemNum+i);
+#endif
         if (rank == 0 && verbose >= 3) {
           printf("V-3: create_remove_items_helper (non-dirs remove): curr_item is \"%s\"\n", curr_item);
           fflush(stdout);

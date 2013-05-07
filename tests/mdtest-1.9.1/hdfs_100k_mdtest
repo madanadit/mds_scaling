@@ -1,0 +1,86 @@
+-- started at 05/07/2013 11:10:22 --
+
+mdtest-1.9.1 was launched with 1 total task(s) on 1 node(s)
+Command line used: ./mdtest -d / -n 100000 -i1 -N 1 -v -u -C -T
+V-1: Entering valid_tests...
+barriers                : True
+collective_creates      : False
+create_only             : True
+dirpath(s):
+	/
+dirs_only               : True
+read_bytes              : 0
+read_only               : False
+first                   : 1
+files_only              : True
+iterations              : 1
+items_per_dir           : 0
+last                    : 0
+leaf_only               : False
+items                   : 100000
+nstride                 : 1
+pre_delay               : 0
+remove_only             : False
+random_seed             : 0
+stride                  : 1
+shared_file             : False
+time_unique_dir_overhead: False
+stat_only               : True
+unique_dir_per_task     : True
+write_bytes             : 0
+sync_file               : False
+depth                   : 0
+V-1: Entering display_freespace...
+V-1: Entering show_file_system_size...
+Giga: Leaving show_file_system_size...stat not supported
+
+1 tasks, 100000 files/directories
+
+   Operation               Duration              Rate
+   ---------               --------              ----
+V-1: main: * iteration 1 *
+V-1: Entering create_remove_directory_tree, currDepth = 0...
+V-1: Entering create_remove_directory_tree, currDepth = 1...
+V-1: main:   Tree creation     :          0.005 sec,        209.558 ops/sec
+V-1: Entering directory_test...
+V-1: Entering unique_dir_access...
+V-1: Entering offset_timers...
+V-1: Entering create_remove_items, currDepth = 0...
+V-1: Entering create_remove_items_helper...
+V-1: Entering unique_dir_access...
+V-1: Entering offset_timers...
+V-1: Entering mdtest_stat...
+V-1: Entering offset_timers...
+V-1:   Directory creation:        249.156 sec,        401.354 ops/sec
+V-1:   Directory stat    :        328.220 sec,        304.674 ops/sec
+V-1:   Directory removal :          0.000 sec,          0.000 ops/sec
+V-1: Entering file_test...
+V-1: Entering unique_dir_access...
+V-1: Entering offset_timers...
+V-1: Entering create_remove_items, currDepth = 0...
+V-1: Entering create_remove_items_helper...
+V-1: Entering unique_dir_access...
+V-1: Entering offset_timers...
+V-1: Entering mdtest_stat...
+V-1: Entering offset_timers...
+V-1:   File creation     :        145.134 sec,        689.016 ops/sec
+V-1:   File stat         :        175.758 sec,        568.964 ops/sec
+V-1:   File read         :          0.000 sec,          0.000 ops/sec
+V-1:   File removal      :          0.000 sec,          0.000 ops/sec
+V-1: Entering summarize_results...
+
+SUMMARY: (of 1 iterations)
+   Operation                      Max            Min           Mean        Std Dev
+   ---------                      ---            ---           ----        -------
+   Directory creation:        401.354        401.354        401.354          0.000
+   Directory stat    :        304.674        304.674        304.674          0.000
+   Directory removal :          0.000          0.000          0.000          0.000
+   File creation     :        689.016        689.016        689.016          0.000
+   File stat         :        568.964        568.964        568.964          0.000
+   File read         :          0.000          0.000          0.000          0.000
+   File removal      :          0.000          0.000          0.000          0.000
+   Tree creation     :        209.558        209.558        209.558          0.000
+   Tree removal      :          0.000          0.000          0.000          0.000
+V-1: Entering timestamp...
+
+-- finished at 05/07/2013 11:25:21 --

@@ -25,7 +25,7 @@
 #include "util/logging.h"
 #include "util/posix_logger.h"
 
-#define PLATFORM_HDFS
+//#define PLATFORM_HDFS
 #ifdef PLATFORM_HDFS
 #include "hdfs.h"
 #endif
@@ -115,6 +115,7 @@ static bool onHDFS(const std::string &fname) {
   return on_hdfs;
 }
 
+#ifdef PLATFORM_HDFS
 static hdfsFS hdfs_primary_fs_;
 static std::map<std::string, hdfsFS> hdfs_connections_;
 
@@ -151,6 +152,8 @@ std::string getPath(const std::string &fname) {
 static hdfsFS connectFS(const std::string &fname) {
 	hdfsFS hdfs_fs;
 	if(!isRemote(fname) || !getHost(fname).compare(getHostIPAddress())) {
+		hdfsDebugLog(1, "HDFS: Resolved host from remote path[%s] to primary\n", 
+			fname.c_str());
 		hdfs_fs = hdfs_primary_fs_;
 	} else {
 		std::string secondary_host = getHost(fname); 
@@ -310,6 +313,7 @@ class HDFSWritableFile : public WritableFile {
     return s;
   }
 };
+#endif
 /* End: HDFS Env */
 
 class PosixSequentialFile: public SequentialFile {
@@ -449,13 +453,16 @@ class PosixEnv : public Env {
   PosixEnv();
   virtual ~PosixEnv() {
     fprintf(stderr, "Destroying Env::Default()\n");
+#ifdef PLATFORM_HDFS    
     hdfsDisconnect(hdfs_primary_fs_);
 		hdfsDisconnect_all();
+#endif
     exit(1);
   }
 
   virtual Status NewSequentialFile(const std::string& fname,
                                    SequentialFile** result) {
+#ifdef PLATFORM_HDFS    
     if(onHDFS(fname)) {
 			std::string filename = getPath(fname);
     	hdfsFile f = hdfsOpenFile(connectFS(fname), filename.c_str(), O_RDONLY, 0, 1, 0);
@@ -467,6 +474,7 @@ class PosixEnv : public Env {
 				return Status::OK();
 			}
 		} else {
+#endif
 			FILE* f = fopen(fname.c_str(), "r");
 			if (f == NULL) {
 				*result = NULL;
@@ -475,7 +483,9 @@ class PosixEnv : public Env {
 				*result = new PosixSequentialFile(fname, f);
 				return Status::OK();
 			}
+#ifdef PLATFORM_HDFS    
 		}
+#endif
   }
 
   virtual Status NewRandomAccessFile(const std::string& fname,
@@ -483,6 +493,7 @@ class PosixEnv : public Env {
     *result = NULL;
     Status s;
     
+#ifdef PLATFORM_HDFS    
     if(onHDFS(fname)) {
 			std::string filename = getPath(fname);
       hdfsFile new_file = NULL;
@@ -507,13 +518,16 @@ class PosixEnv : public Env {
         *result = new HDFSRandomAccessFile(fname, new_file);
       }
     } else {
+#endif
       int fd = open(fname.c_str(), O_RDONLY);
       if (fd < 0) {
         s = IOError(fname, errno);
       } else {
         *result = new PosixRandomAccessFile(fname, fd);
       }
+#ifdef PLATFORM_HDFS    
     }
+#endif
     return s;
   }
 
@@ -521,6 +535,7 @@ class PosixEnv : public Env {
                                  WritableFile** result) {
     Status s;
     
+#ifdef PLATFORM_HDFS    
     if(onHDFS(fname)) {
 			std::string filename = getPath(fname);
       int exists = hdfsExists(connectFS(fname), filename.c_str());
@@ -537,8 +552,9 @@ class PosixEnv : public Env {
         s = IOError(fname, errno);
       } else {
         *result = new HDFSWritableFile(fname, new_file);
-      }
+      }    
     } else {  
+#endif
       const int fd = open(fname.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0644);
       if (fd < 0) {
         *result = NULL;
@@ -546,26 +562,30 @@ class PosixEnv : public Env {
       } else {
         *result = new PosixWritableFile(fname, fd);
       }
+#ifdef PLATFORM_HDFS    
     }
+#endif
     return s;
   }
 
   virtual bool FileExists(const std::string& fname) {
+#ifdef PLATFORM_HDFS    
     if(onHDFS(fname)) {
 			std::string filename = getPath(fname);
       hdfsDebugLog(1, "Check file exists path %s\n", fname.c_str());
 
       return (hdfsExists(connectFS(fname), filename.c_str()) == 0);
     }
+#endif
     return access(fname.c_str(), F_OK) == 0;
   }
 
   virtual Status GetChildren(const std::string& dir,
                              std::vector<std::string>* result) {
-    hdfsDebugLog(1, "Get children path %s\n", dir.c_str());
-
     result->clear();
 
+#ifdef PLATFORM_HDFS    
+    hdfsDebugLog(1, "Get children path %s\n", dir.c_str());
     //TODO: Directory read from both HDFS and local FS 
     int num_entries = 0;
     hdfsFileInfo* entries = hdfsListDirectory(hdfs_primary_fs_, dir.c_str(), &num_entries);
@@ -580,6 +600,7 @@ class PosixEnv : public Env {
       }
       hdfsFreeFileInfo(entries, num_entries);   
     }
+#endif
 
     DIR* d = opendir(dir.c_str());
     if (d == NULL) {
@@ -596,6 +617,7 @@ class PosixEnv : public Env {
 
   virtual Status DeleteFile(const std::string& fname) {
     Status result;
+#ifdef PLATFORM_HDFS    
     if(onHDFS(fname)) {
 			std::string filename = getPath(fname);
       hdfsDebugLog(1, "Delete file path %s\n", fname.c_str());
@@ -605,16 +627,22 @@ class PosixEnv : public Env {
 
         result = IOError(fname, errno);
       }
-    } else if (unlink(fname.c_str()) != 0) {
-      result = IOError(fname, errno);
-    }
+    } else {
+#endif
+				if (unlink(fname.c_str()) != 0) {
+      		result = IOError(fname, errno);
+    	}
+#ifdef PLATFORM_HDFS    
+		}
+#endif
     return result;
   };
 
   virtual Status CreateDir(const std::string& name) {
-    hdfsDebugLog(1, "Create dir %s\n", name.c_str());
 
     Status result;
+#ifdef PLATFORM_HDFS    
+    hdfsDebugLog(1, "Create dir %s\n", name.c_str());
     if (hdfsCreateDirectory(hdfs_primary_fs_, name.c_str()) != 0) {
       hdfsDebugLog(0, "Error in create dir %s\n", name.c_str());
 
@@ -622,7 +650,7 @@ class PosixEnv : public Env {
     } else {
       hdfsChmod(hdfs_primary_fs_, name.c_str(), 0755);
     }
-
+#endif
     if (mkdir(name.c_str(), 0755) != 0) {
       result = IOError(name, errno);
     }
@@ -630,15 +658,16 @@ class PosixEnv : public Env {
   };
 
   virtual Status DeleteDir(const std::string& name) {
-    hdfsDebugLog(1, "Delete dir %s\n", name.c_str());
 
     Status result;
+#ifdef PLATFORM_HDFS    
+    hdfsDebugLog(1, "Delete dir %s\n", name.c_str());
     if (hdfsDelete(hdfs_primary_fs_, name.c_str(), 1) != 0) {
       hdfsDebugLog(0, "Error in delete dir %s\n", name.c_str());
 
       result = IOError(name, errno);
     }
-
+#endif
     if (rmdir(name.c_str()) != 0) {
       result = IOError(name, errno);
     }
@@ -646,11 +675,12 @@ class PosixEnv : public Env {
   };
 
   virtual Status GetFileSize(const std::string& fname, uint64_t* size) {
+#ifdef PLATFORM_HDFS    
     if(onHDFS(fname)) {
       fprintf(stdout, "HDFS: Get File Size %s not implemented\n", fname.c_str());
       exit(0);
     }
-
+#endif
     Status s;
     struct stat sbuf;
     if (stat(fname.c_str(), &sbuf) != 0) {
@@ -663,11 +693,12 @@ class PosixEnv : public Env {
   }
 
   virtual Status CopyFile(const std::string& src, const std::string& target) {
+#ifdef PLATFORM_HDFS    
     if(onHDFS(src) || onHDFS(target)) {
       fprintf(stdout, "HDFS: Copy File src:%s target:%s not implemented\n", src.c_str(), target.c_str());
       exit(0);
     }
-
+#endif
     Status result;
     int r_fd, w_fd;
     if ((r_fd = open(src.c_str(), O_RDONLY)) < 0) {
@@ -691,11 +722,12 @@ class PosixEnv : public Env {
   }
 
   virtual Status SymlinkFile(const std::string& src, const std::string& target) {
+#ifdef PLATFORM_HDFS    
     if(onHDFS(src) || onHDFS(target)) {
       fprintf(stdout, "HDFS: Symlink File src:%s target:%s. Not supported\n", src.c_str(), target.c_str());
       exit(0);
     }
-    
+#endif    
     Status result;
 
     if (symlink(src.c_str(), target.c_str()) != 0) {
@@ -705,10 +737,12 @@ class PosixEnv : public Env {
   }
 
   virtual Status RenameFile(const std::string& src, const std::string& target) {
+#ifdef PLATFORM_HDFS    
     if(onHDFS(src) || onHDFS(target)) {
       fprintf(stdout, "HDFS: Rename File src:%s target:%s not implemented\n", src.c_str(), target.c_str());
       exit(0);
     }
+#endif
 
     Status result;
     if (rename(src.c_str(), target.c_str()) != 0) {
@@ -718,11 +752,12 @@ class PosixEnv : public Env {
   }
 
   virtual Status LinkFile(const std::string& src, const std::string& target) {
+#ifdef PLATFORM_HDFS    
     if(onHDFS(src) || onHDFS(target)) {
       fprintf(stdout, "HDFS: Link File src:%s target:%s. Not supported\n", src.c_str(), target.c_str());
       exit(0);
     }
-    
+#endif    
     Status result;
     if (link(src.c_str(), target.c_str()) != 0) {
       result = IOError(src, errno);
@@ -731,11 +766,12 @@ class PosixEnv : public Env {
   }
 
   virtual Status LockFile(const std::string& fname, FileLock** lock) {
+#ifdef PLATFORM_HDFS    
     if(onHDFS(fname)) {
       fprintf(stdout, "HDFS: Lock File %s. Not supported\n", fname.c_str());
       exit(0);
     }
-    
+#endif    
     *lock = NULL;
     Status result;
     int fd = open(fname.c_str(), O_RDWR | O_CREAT, 0644);
